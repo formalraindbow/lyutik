@@ -1,0 +1,16 @@
+# ключи живут в ~/.config/lyutik/secrets.env, сюда не попадают; это страховка
+.env
+*.env
+secrets*
+__pycache__/
+*.pyc
+.DS_Store
+logs/
+agent/lyutik/media/
+
+# живая память персонажа — его решение 22.10: в репо не кладём
+agent/lyutik/memory/entities/
+agent/lyutik/memory/state.md
+agent/lyutik/state/
+agent/lyutik/GOALS.md
+agent/lyutik/drafts.md
