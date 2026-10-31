@@ -90,21 +90,40 @@ def whisper_model():
     d = os.environ.get("WHISPER_DIR") or os.path.expanduser("~/.local/share/lyutik/whisper-small")
     return d if os.path.exists(os.path.join(d, "model.bin")) and os.path.exists(os.path.join(d, "config.json")) else "small"
 
-def words_of(path):
-    """Слова как спеты: Whisper (малая модель, int8 на процессоре). Вокала нет — скажет."""
+WORDS_SECONDS = 300      # слова разбираются с начала и не дальше: Whisper на длинном треке без голоса
+WORDS_BUDGET = 200       # может считать десятками минут; дальше этой границы — стоп, с пометкой до куда успел
+
+def words_of(path, duration):
+    """Слова как спеты: Whisper (малая модель, int8 на процессоре) по первым WORDS_SECONDS секундам,
+    с бюджетом времени на разбор. Возвращает (строки, язык, уверенность, пометка об обрезке)."""
+    import time
     from faster_whisper import WhisperModel
+    cut = ""
+    if duration > WORDS_SECONDS:
+        clipped = path.replace(".wav", "_words.wav")
+        r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", path, "-t", str(WORDS_SECONDS), clipped],
+                           capture_output=True, text=True)
+        if r.returncode == 0:
+            path, cut = clipped, f"первые {WORDS_SECONDS // 60} мин"
     model = WhisperModel(whisper_model(), device="cpu", compute_type="int8")
     segs, info = model.transcribe(path, beam_size=1, vad_filter=False, condition_on_previous_text=False)
-    lines, total = [], 0
+    lines, total, stop = [], 0, None
+    started = time.time()
     for s in segs:
+        if time.time() - started > WORDS_BUDGET:      # тихое интро даёт пустые сегменты минутами —
+            stop = s.end                              # бюджет проверяется до всех continue
+            break
         text = s.text.strip()
         if not text:
             continue
         lines.append((s.start, s.end, text))
         total += len(text)
         if total > 3000:
+            cut = cut or "первые строки"
             break
-    return lines, info.language, info.language_probability
+    if stop is not None:
+        cut = f"успел до {mmss(stop)}" + (f", {cut}" if cut else "")
+    return lines, info.language, info.language_probability, cut
 
 def main():
     if len(sys.argv) < 2:
@@ -138,10 +157,10 @@ def main():
                + ("ровно, без вздохов" if rng < 8 else "живая динамика" if rng < 16 else "резкие перепады")
                + f"; самое громкое место — {mmss(loud_i * hop_t)}. Звук {tone}.")
 
-    lines, lang, lang_p = ([], None, 0.0)
+    lines, lang, lang_p, cut = ([], None, 0.0, "")
     if want_words:
         try:
-            lines, lang, lang_p = words_of(wav)
+            lines, lang, lang_p, cut = words_of(wav, duration)
         except Exception as e:
             out.append(f"Слова не разобрал: {type(e).__name__}: {str(e)[:120]}")
     vocal = [(a, b) for a, b, _ in lines]
@@ -162,11 +181,12 @@ def main():
             lang_ru = {"ru": "русский", "en": "английский", "uk": "украинский", "de": "немецкий", "fr": "французский",
                        "es": "испанский", "it": "итальянский", "pl": "польский"}.get(lang, lang)
             out.append(f"Слова как расслышал (язык {lang_ru}, уверенность {lang_p:.0%}; Whisper путает слова в пении, "
-                       f"цитировать с оглядкой):")
+                       f"цитировать с оглядкой{'; ' + cut if cut else ''}):")
             for a, b, text in lines[:80]:
                 out.append(f"  [{mmss(a)}] {text}")
         else:
-            out.append("Слов не расслышал: либо нет вокала, либо он глубоко в миксе.")
+            out.append("Слов не расслышал: либо нет вокала, либо он глубоко в миксе."
+                       + (f" (Слова искал не по всему треку: {cut}.)" if cut else ""))
     print("\n".join(out))
 
 

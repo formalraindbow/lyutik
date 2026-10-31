@@ -23,7 +23,7 @@ def main():
         refuse(f"текст длиннее {MAX_LEN} символов ({len(text)}): раздели на два сообщения")
     t = now().isoformat(timespec="seconds")
     if DRY:
-        append_jsonl(STATE / "dialogs.jsonl", {"at": t, "dir": "out", "chat": chat, "text": text, "dry": True})
+        append_jsonl(STATE / "dialogs.jsonl", {"at": t, "dir": "out", "kind": "dm", "chat": chat, "text": text, "dry": True})
         print(f"[сухой прогон] в личку {chat} не отправлено: {text[:80]}…")
         return
     token = secrets().get("TELEGRAM_BOT_TOKEN")
@@ -39,7 +39,7 @@ def main():
         refuse(f"Telegram ответил {e.code}: {json.loads(e.read().decode() or '{}').get('description', '')}")
     except urllib.error.URLError as e:
         refuse(f"нет связи с Telegram: {e.reason}")
-    append_jsonl(STATE / "dialogs.jsonl", {"at": t, "dir": "out", "chat": chat, "text": text,
+    append_jsonl(STATE / "dialogs.jsonl", {"at": t, "dir": "out", "kind": "dm", "chat": chat, "text": text,
                                            "message_id": res["result"]["message_id"]})
     print(f"отправлено в личку {chat}")
 

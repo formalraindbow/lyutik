@@ -11,8 +11,16 @@ from _common import STATE, read_jsonl
 LIMIT = 25
 
 
+def is_dm(d):
+    """Личные сообщения. У старых исходящих текстов (до 26.10) поля kind нет — узнаём их по чату
+    без поста и действия: комментарии держат post, модерация — action."""
+    if d.get("kind"):
+        return d.get("kind") == "dm"
+    return "chat" in d and "post" not in d and "action" not in d
+
+
 def listing(chat):
-    rows = [d for d in read_jsonl(STATE / "dialogs.jsonl") if d.get("kind") == "dm" and not d.get("dry")]
+    rows = [d for d in read_jsonl(STATE / "dialogs.jsonl") if is_dm(d) and not d.get("dry")]
     if chat:
         rows = [d for d in rows if str(d.get("chat")) == str(chat)]
     if not rows:
