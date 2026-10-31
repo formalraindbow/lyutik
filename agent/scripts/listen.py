@@ -95,7 +95,7 @@ def main():
     if path.stat().st_size > MAX_MB * 1024 * 1024:
         fail(f"файл больше {MAX_MB} МБ")
     r = subprocess.run([py, str(EARS), str(path)] + ([] if want_words else ["--no-words"]),
-                       capture_output=True, text=True, timeout=560)
+                       capture_output=True, text=True, timeout=580)
     if r.returncode != 0:
         fail((r.stderr or r.stdout).strip()[-300:])
     report = r.stdout.strip()

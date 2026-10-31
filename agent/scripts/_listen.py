@@ -91,7 +91,9 @@ def whisper_model():
     return d if os.path.exists(os.path.join(d, "model.bin")) and os.path.exists(os.path.join(d, "config.json")) else "small"
 
 WORDS_SECONDS = 300      # слова разбираются с начала и не дальше: Whisper на длинном треке без голоса
-WORDS_BUDGET = 200       # может считать десятками минут; дальше этой границы — стоп, с пометкой до куда успел
+WORDS_BUDGET = 180       # бюджет на разбор слов; сверх него — стоп, с пометкой до куда успел
+WORDS_HARD = WORDS_BUDGET + 45   # потолок дочернему процессу слов: один тяжёлый кусок может считаться
+                                # минутами и не отдать сегмент — бюджет «между сегментами» его не видит
 
 def words_of(path, duration):
     """Слова как спеты: Whisper (малая модель, int8 на процессоре) по первым WORDS_SECONDS секундам,
@@ -125,9 +127,20 @@ def words_of(path, duration):
         cut = f"успел до {mmss(stop)}" + (f", {cut}" if cut else "")
     return lines, info.language, info.language_probability, cut
 
+
+def words_child(wav, duration):
+    """Режим `_listen.py --words <wav> <длительность>`: разбор слов отдельным процессом — родитель
+    убивает его по WORDS_HARD, сколько бы ни считал Whisper. Печатает одну строку JSON."""
+    lines, lang, p, cut = words_of(wav, float(duration))
+    import json
+    print(json.dumps({"lines": lines, "lang": lang, "p": p, "cut": cut}, ensure_ascii=False))
+
 def main():
     if len(sys.argv) < 2:
-        sys.exit("использование: _listen.py <файл> [--no-words]")
+        sys.exit("использование: _listen.py <файл> [--no-words] | _listen.py --words <wav> <длительность>")
+    if sys.argv[1] == "--words":
+        words_child(sys.argv[2], float(sys.argv[3]))
+        return
     src, want_words = sys.argv[1], "--no-words" not in sys.argv
     import librosa
     wav = to_wav(src)
@@ -157,12 +170,22 @@ def main():
                + ("ровно, без вздохов" if rng < 8 else "живая динамика" if rng < 16 else "резкие перепады")
                + f"; самое громкое место — {mmss(loud_i * hop_t)}. Звук {tone}.")
 
-    lines, lang, lang_p, cut = ([], None, 0.0, "")
+    lines, lang, lang_p, cut, words_failed = ([], None, 0.0, "", False)
     if want_words:
+        import json
         try:
-            lines, lang, lang_p, cut = words_of(wav, duration)
-        except Exception as e:
-            out.append(f"Слова не разобрал: {type(e).__name__}: {str(e)[:120]}")
+            r = subprocess.run([sys.executable, os.path.abspath(__file__), "--words", wav, str(int(duration))],
+                               capture_output=True, text=True, timeout=WORDS_HARD)
+            if r.returncode == 0 and r.stdout.strip():
+                d = json.loads(r.stdout.strip().splitlines()[-1])
+                lines, lang, lang_p, cut = d["lines"], d["lang"], d["p"], d["cut"]
+            else:
+                words_failed = True
+                out.append(f"Слова не разобрал: {(r.stderr or r.stdout).strip()[-120:]}")
+        except subprocess.TimeoutExpired:
+            words_failed = True
+            out.append(f"Слова не разобрал: ухо не успело за отмеренное время — трек трудный для разбора слов. "
+                       f"Измерение выше целиком, слов не выдумываю")
     vocal = [(a, b) for a, b, _ in lines]
 
     def has_voice(a, b):
@@ -176,7 +199,7 @@ def main():
             voice = "с голосом" if has_voice(p["a"], p["b"]) else ("без голоса" if want_words and lines else "")
             like = f", похоже на часть {p['like'] + 1}" if p["like"] is not None else ""
             out.append(f"  {i + 1}. {mmss(p['a'])}–{mmss(p['b'])} — {kind}{', ' + voice if voice else ''}{like}")
-    if want_words:
+    if want_words and not words_failed:
         if lines:
             lang_ru = {"ru": "русский", "en": "английский", "uk": "украинский", "de": "немецкий", "fr": "французский",
                        "es": "испанский", "it": "итальянский", "pl": "польский"}.get(lang, lang)
