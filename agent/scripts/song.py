@@ -20,7 +20,8 @@ channel / chat / comment — отправить песню или сниппет
 Обложка — из --cover (путь к картинке; любой другой текст — описание, обложка рисуется), иначе последняя, назначенная
 песне (кусок берёт обложку своей песни). Она уходит дважды: внутри mp3 (ID3, 800 px — видна у скачавших) и превью
 для Telegram (jpeg до 320 px и 200 КБ, так требует sendAudio).
-release — релиз в канал: видео-сниппет (обложка в кадре и кусок песни, 25 с с трети записи) с подписью,
+release — релиз в канал: видео-сниппет 9:16 в формате промо (_video.py: размытый фон, обложка карточкой, название,
+спетые строки субтитрами, глитч-вступление; 15 с с трети записи) с подписью,
 следом — вся песня треком с обложкой. Текст песни уходит комментарием под релиз сам: release оставляет отметку
 в state/lyrics_pending.json, цикл (run.py) видит пост в обсуждении и зовёт lyrics.
 lyrics — текст песни из songs.jsonl комментарием под постом: ответ на его копию в группе обсуждения.
@@ -358,7 +359,7 @@ def snippet_video(src, cover, start, length, title, tmp):
                            capture_output=True, text=True, timeout=300)
         if r.returncode == 0 and clip.exists():
             n = len(json.loads(lines.read_text(encoding="utf-8"))) if lines.exists() else 0
-            return clip, f"в такт, строк субтитрами: {n}"
+            return clip, f"в формате промо 9:16, строк субтитрами: {n}"
         why = (r.stderr or r.stdout).strip()[-160:]
     except subprocess.TimeoutExpired:
         why = "рендер не уложился в 5 минут"
@@ -469,7 +470,7 @@ def release(path_arg, caption, cover_arg="", start=None, length=None):
     if not cover and not DRY:
         fail("у песни нет обложки: опиши её в cover — нарисую, или дай путь к картинке")
     total = seconds_of(src)
-    length = max(8.0, min(float(length or 25), 45.0, total))
+    length = max(8.0, min(float(length or 15), 45.0, total))     # 15 с — как у промо-сниппетов (референс 8.11)
     start = float(start) if start not in (None, "") else total / 3
     start = max(0.0, min(start, total - length))
     if DRY:
@@ -487,7 +488,8 @@ def release(path_arg, caption, cover_arg="", start=None, length=None):
         ffmpeg("-i", cover, "-vf", square.format(320), "-q:v", 4, thumb)
         clip, how = snippet_video(src, cover, start, length, title, tmp)
         video = {"chat_id": channel, "video": "attach://clip", "thumbnail": "attach://thumb", "width": 1080,
-                 "height": 1080, "duration": int(round(length)), "supports_streaming": "true"}
+                 "height": 1920 if how.startswith("в формате") else 1080, "duration": int(round(length)),
+                 "supports_streaming": "true"}
         msg = tg_captioned(token, "sendVideo", lambda rich: with_caption(video, caption, rich),
                            {"clip": ("snippet.mp4", clip.read_bytes(), "video/mp4"),
                             "thumb": ("thumb.jpg", thumb.read_bytes(), "image/jpeg")})
