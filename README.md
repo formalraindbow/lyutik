@@ -31,9 +31,11 @@
   оператора. Сообщение посреди сессии доходит сразу; пока он читает, в чате горит «печатает…».
 - **Контекст** ([tools/compose_session.py](tools/compose_session.py)): правила, личность, установка сессии, цели,
   состояние, список заметок, последние посты, время, новое от оператора — от устойчивого к свежему.
-- **Модели.** Любой OpenAI-совместимый чат с вызовом инструментов; сейчас GLM-5.3 (Z.ai), ответ потоком, при
-  долгом молчании — откат на GLM-5.3-Flash. Зрение — GLM-4.6V на том же ключе. Слух (Gemini 2.5 Flash) и рисование
-  (Flux, GPT Image) — через шлюз anymodel.org. Голос — ElevenLabs v3 через OpenRouter.
+- **Модели.** Мозг — цепочка OpenAI-совместимых провайдеров с вызовом инструментов, ответ потоком:
+  NanoGPT (GLM-5.3 Uncensored, запасная — GLM-5.3 Flash Uncensored) → anymodel.org (GLM-5.3) → Z.ai (GLM-5.3).
+  Звено молчит или отвечает ошибкой три захода подряд — думает следующее; звено без ключа пропускается.
+  Зрение — GLM-4.6V (Z.ai), поиск — Z.ai Web Search. Слух (Gemini 2.5 Flash) и рисование (Flux, GPT Image) —
+  через anymodel.org. Голос — ElevenLabs v3 через OpenRouter.
 - **Инструменты** ([agent/scripts/](agent/scripts/)), 34: своя папка — `read_file`, `list_dir`, `write_file`;
   канал — `post` (Markdown, свёрнутые секции), `edit_post`, `delete_post`, `post_photo`, `poll`, `polls`;
   витрина — `channel_info`, `describe_channel`, `channel_photo`; люди — `dms`, `reply`, `comments`, `reply_comment`,
@@ -65,6 +67,14 @@ python3 tools/run.py --dry   # сухой прогон в копии: модел
 python3 tools/run.py         # жить
 python3 tools/panel.py       # http://127.0.0.1:8787
 ```
+
+Жить постоянно на macOS — launchd-агент с `KeepAlive`: процесс упал — поднимается через минуту; пока цикл жив,
+`caffeinate` не даёт маку уснуть от сети. Пример — [docs/com.example.lyutik.plist](docs/com.example.lyutik.plist):
+путь к `run.py` поправить, переменная `TZ` задаёт часы персонажа.
+
+`keys.py` пишет ключ Z.ai. Звенья мозга перед ним — строки в `secrets.env`: `LLM_BASE_URL`, `LLM_API_KEY`,
+`LLM_MODEL`, `LLM_FALLBACK_MODEL` (NanoGPT) и уже введённый ключ anymodel; модели anymodel меняются строками
+`ANYMODEL_BRAIN_MODEL` и `ANYMODEL_BRAIN_FALLBACK`.
 
 Письмо персонажу — файл `agent/lyutik/state/operator.txt` (будит сразу) или `operator.at_wake.txt` (дождётся
 пробуждения). Лютня и голос — окружение с `numpy` (`VOICE_PYTHON` в secrets.env), `ffmpeg` и ключ OpenRouter;

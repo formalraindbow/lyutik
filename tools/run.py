@@ -306,19 +306,34 @@ def call_tool(name, args, dry):
 
 # ── модели ────────────────────────────────────────────────────────────────────
 class GLM:
-    """OpenAI-совместимый чат Z.ai. Провайдер — три строки в secrets.env: адрес, модель, ключ."""
+    """Мозг — цепочка OpenAI-совместимых провайдеров: NanoGPT (LLM_*) → anymodel (ANYMODEL_*) → Z.ai (GLM_*).
+    У каждого основная и запасная модель. Провайдер не ответил за три захода — думает следующий в цепочке.
+    Ключа нет — звено пропускается. Зрение и поиск живут на ключе GLM_* отдельно."""
     def __init__(self, s):
-        self.url = s["GLM_BASE_URL"].rstrip("/") + "/chat/completions"
-        self.key, self.model = s["GLM_API_KEY"], s["GLM_MODEL"]
-        self.fallback = s.get("GLM_FALLBACK_MODEL") or "glm-5.3-flash"   # когда основная молчит дольше предела
+        self.chain = brain_chain(s)
 
     def __call__(self, messages):
+        errors = []
+        for name, url, key, model, fallback in self.chain:
+            try:
+                msg = self.ask(url, key, model, fallback, messages)
+            except RuntimeError as e:
+                errors.append(f"{name}: {e}")
+                emit("note", text=f"мозг {name} не ответил: {e} — передаю следующему")
+                continue
+            if errors:
+                emit("note", text=f"думает {name} ({model}) после сбоя: " + "; ".join(errors))
+            return msg
+        raise RuntimeError("вся цепочка мозга молчит — " + "; ".join(errors))
+
+    def ask(self, url, key, main, fallback, messages):
         for attempt in range(3):
-            model = self.model if attempt == 0 else self.fallback
+            model = main if attempt == 0 else fallback
             body = json.dumps({"model": model, "messages": messages, "tools": TOOLS,
                                "tool_choice": "auto", "stream": True}, ensure_ascii=False).encode()
-            req = urllib.request.Request(self.url, data=body, method="POST", headers={
-                "Content-Type": "application/json", "Authorization": f"Bearer {self.key}"})
+            req = urllib.request.Request(url, data=body, method="POST", headers={
+                "Content-Type": "application/json", "Authorization": f"Bearer {key}",
+                "User-Agent": "Mozilla/5.0 (Macintosh) lyutik/1.0"})     # anymodel без браузерного UA отвечает 403
             try:
                 return self.stream(req)
             except urllib.error.HTTPError as e:
@@ -326,17 +341,17 @@ class GLM:
                 if e.code in (429, 500, 502, 503, 504) and attempt < 2:
                     time.sleep(20 * (attempt + 1))
                     continue
-                raise RuntimeError(f"GLM ответил {e.code}: {detail}")
+                raise RuntimeError(f"{model} ответил {e.code}: {detail}")
             except TimeoutError as e:                    # замолчала — следующий заход в быструю модель, без паузы
                 if attempt < 2:
-                    emit("note", text=f"{model}: {e} — пробую {self.fallback}")
+                    emit("note", text=f"{model}: {e} — пробую {fallback}")
                     continue
-                raise RuntimeError(f"нет связи с GLM: {e}")
+                raise RuntimeError(f"нет связи с {model}: {e}")
             except (urllib.error.URLError, OSError, http.client.HTTPException, ValueError, KeyError) as e:
                 if attempt < 2:                          # оборванное соединение, пустой ответ — пробуем ещё
                     time.sleep(20)
                     continue
-                raise RuntimeError(f"нет связи с GLM: {getattr(e, 'reason', None) or type(e).__name__ + ': ' + str(e)}")
+                raise RuntimeError(f"нет связи с {model}: {getattr(e, 'reason', None) or type(e).__name__ + ': ' + str(e)}")
 
     @staticmethod
     def stream(req):
@@ -362,7 +377,7 @@ class GLM:
                 for ch in chunk.get("choices") or []:
                     delta = ch.get("delta") or {}
                     msg["content"] += delta.get("content") or ""
-                    msg["reasoning_content"] += delta.get("reasoning_content") or ""
+                    msg["reasoning_content"] += delta.get("reasoning_content") or delta.get("reasoning") or ""
                     for tc in delta.get("tool_calls") or []:
                         slot = calls.setdefault(tc.get("index", len(calls)),
                                                 {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
@@ -783,6 +798,22 @@ def nap(until, reason, ears=None):
     return reason, []
 
 
+def brain_chain(s):
+    """Звенья мозга по порядку: (имя, адрес, ключ, модель, запасная). Без ключа звена нет."""
+    links = [
+        ("NanoGPT", "LLM_", "z-ai/glm-5.3-uncensored", "z-ai/glm-5.3-flash-uncensored"),
+        ("anymodel", "ANYMODEL_", "glm/glm-5.3", "glm/glm-5.3-flash"),
+        ("Z.ai", "GLM_", "glm-5.3", "glm-5.3-flash"),
+    ]
+    chain = []
+    for name, p, model, fallback in links:
+        if s.get(p + "API_KEY") and s.get(p + "BASE_URL"):
+            chain.append((name, s[p + "BASE_URL"].rstrip("/") + "/chat/completions", s[p + "API_KEY"],
+                          s.get(p + "BRAIN_MODEL") or s.get(p + "MODEL") or model,
+                          s.get(p + "BRAIN_FALLBACK") or s.get(p + "FALLBACK_MODEL") or fallback))
+    return chain
+
+
 def secrets():
     data = {}
     if SECRETS.exists():
@@ -812,8 +843,9 @@ def main():
         model = FakeModel()
     else:
         s = secrets()
-        missing = [k for k in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "GLM_API_KEY", "GLM_BASE_URL",
-                               "GLM_MODEL") if not s.get(k)]
+        missing = [k for k in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID") if not s.get(k)]
+        if not brain_chain(s):
+            missing.append("ключ хотя бы одного мозга (LLM_*, ANYMODEL_* или GLM_*)")
         if missing:
             sys.exit(f"нет ключей: {', '.join(missing)}. Запусти: python3 tools/keys.py")
         model = GLM(s)
@@ -821,6 +853,9 @@ def main():
 
     operator, wake, pending = a.operator, "первое пробуждение после запуска", []
     emit("start", pid=os.getpid(), dry=a.dry)
+    if not (a.dry or a.once):      # мак не засыпает, пока жив цикл; от сети питания, с открытой крышкой
+        subprocess.Popen(["/usr/bin/caffeinate", "-i", "-s", "-w", str(os.getpid())],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         if not (a.once or a.dry or operator) and NEXT_WAKE.exists():   # перезапуск посреди сна — досыпает
             try:
