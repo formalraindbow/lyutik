@@ -10,7 +10,7 @@
 GOALS.md и memory/ своей папки, действовать — скриптами agent/scripts/. Это и есть граница
 рабочего места; её держит код, поэтому контейнер не нужен. Журнал сессий — logs/, в git не идёт.
 """
-import argparse, datetime, json, os, random, re, shutil, subprocess, sys, tempfile, threading, time
+import argparse, datetime, hashlib, json, os, random, re, shutil, subprocess, sys, tempfile, threading, time
 import http.client, urllib.error, urllib.request
 from pathlib import Path
 
@@ -247,6 +247,22 @@ def recent_from(chat, hours=6):
         pass
     return n
 
+# Разнос чужой песни: хвалить ли и в какой форме — тоже кулисы. Промпт «хвалю редко» модель не держит:
+# замер 8.11 — похвала в 5 разносах из 5 и один скелет на всех (учёба/…/2026-11-08_лютик_разнос_проба.md).
+ROAST_GOOD_EVERY = 8          # вкус признаёт песню примерно раз на столько треков; решение по треку постоянно
+ROAST_TASTE = ("ревность громче вкуса — хвалить здесь нечего, ни строчки",
+               "вкус взял слово — если песня и правда хороша, эго промолчит")
+ROAST_FORMS = ("одной фразой", "цитата и приговор, коротко", "разнос по куплетам", "письмо этому артисту",
+               "тост в кабаке — за эту песню", "пересказ песни так, как её услышал бы трактирщик")
+
+def roast_hint(track, good=None):
+    """Кулисы к тексту чужой песни: вкус к ней (по номеру трека, один и тот же навсегда) и форма поста (бросок)."""
+    tid = (re.findall(r"\d+", str(track)) or [str(track)])[0]
+    if good is None:
+        good = int(hashlib.md5(tid.encode()).hexdigest(), 16) % ROAST_GOOD_EVERY == 0
+    return (f"\n\n(кулисы, видишь только ты: {ROAST_TASTE[bool(good)]}. Если пишешь о ней — форма: "
+            f"{random.choice(ROAST_FORMS)}; без эмодзи и без подписи.)")
+
 def roll_move(text, chat, m):
     w = {"flip": 4.0, "snap": 1.0, "show": 1.0, "cut": 0.8, "warm": 0.5, "mute": 0.4, "price": 0.0}
     if INSULT.search(text):
@@ -414,7 +430,8 @@ def call_tool(name, args, dry):
         if name == "music_chart":
             return script("music", "chart", args.get("count") or 20, dry=dry, timeout=120)
         if name == "music_lyrics":
-            return script("music", "lyrics", args["track"], dry=dry, timeout=120)
+            out = script("music", "lyrics", args["track"], dry=dry, timeout=120)
+            return out if out.startswith(("ошибка", "не вышло")) else out + roast_hint(args["track"])
         if name == "remember":
             return script("remember", args["name"], args["text"], dry=dry)
         if name == "canon_search":
