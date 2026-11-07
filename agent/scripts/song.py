@@ -6,6 +6,7 @@
     song.py channel <путь> ["<подпись>"] [--cover <путь к картинке>]
     song.py chat <номер чата> <путь> ["<подпись>"] [--cover <путь к картинке>]
     song.py comment <номер комментария> <путь> ["<подпись>"] [--cover <путь к картинке>]
+    song.py release <путь к песне> "<подпись>" [--cover <путь или описание>] [--start с] [--seconds с]
 
 make — песня через Mureka (шлюз NanoGPT, ключ LLM_API_KEY): текст в разметке [Verse] / [Chorus], звук — пара фраз
 по-английски (жанр, инструменты, темп). Голос — свой клон (MUREKA_VOCAL_ID в secrets.env, модель mureka/api/generate/song);
@@ -15,8 +16,12 @@ make — песня через Mureka (шлюз NanoGPT, ключ LLM_API_KEY): 
 Песни лежат в agent/lyutik/media/songs/, обложки — в media/covers/, список — state/songs.jsonl.
 snippet — кусок песни, по умолчанию 25 секунд с трети записи, с мягким входом и затуханием; ложится рядом с песней.
 channel / chat / comment — отправить песню или сниппет как музыкальный трек: исполнитель «Лютик», название из списка песен.
-Обложка — из --cover, иначе последняя, назначенная песне (кусок берёт обложку своей песни). Она уходит дважды: внутри mp3
-(ID3, 800 px — видна у скачавших) и превью для Telegram (jpeg до 320 px и 200 КБ, так требует sendAudio).
+Обложка — из --cover (путь к картинке; любой другой текст — описание, обложка рисуется), иначе последняя, назначенная
+песне (кусок берёт обложку своей песни). Она уходит дважды: внутри mp3 (ID3, 800 px — видна у скачавших) и превью
+для Telegram (jpeg до 320 px и 200 КБ, так требует sendAudio).
+release — релиз в канал: альбом из обложки картинкой и видео-сниппета (обложка в кадре и кусок песни, 25 с с трети
+записи) с подписью, следом — вся песня треком с обложкой. Фото и трек в один альбом Telegram не кладёт: альбом
+смешивает только фото и видео, поэтому сниппет — видео.
 """
 import json, re, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request, uuid
 from pathlib import Path
@@ -236,16 +241,46 @@ def dress(src, cover, title, tmp):
            "-metadata:s:v", "title=Album cover", "-metadata:s:v", "comment=Cover (front)", tagged, soft=True)
     return tagged.read_bytes(), thumb.read_bytes()
 
-def send(where, target, path_arg, caption="", cover_arg=""):
+def resolve_cover(arg, src, title):
+    """Обложка для выпуска: путь к картинке, описание (тогда рисуется) или пусто — обложка песни.
+    Назначенная или нарисованная остаётся за песней: её возьмут куски и повторные выпуски."""
+    arg = (arg or "").strip()
+    if not arg:
+        return cover_of(src)
+    song_key = entry_for(src).get("of") or rel(src)
+    p = Path(arg)
+    p = p if p.is_absolute() else ROOT / p
+    if "\n" not in arg and len(arg) < 300 and (p.exists() or "/" in arg):
+        if not p.exists():
+            fail(f"нет файла {arg}")
+        if p.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+            fail("обложка — картинка png, jpg или webp")
+        prompt = None
+    else:
+        if len(arg) > COVER_MAX:
+            fail(f"описание обложки длиннее {COVER_MAX} знаков — одна картинка, коротко")
+        if DRY:
+            print(f"[сухой прогон] обложку не рисовал: {arg[:60]}")
+            return None
+        try:
+            p = draw.generate(COVER_FRAME.format(desc=arg), "good", COVERS_DIR / f"{Path(song_key).stem}_{now():%H%M%S}.png",
+                              model=secrets().get("COVER_MODEL") or COVER_MODEL)
+        except draw.DrawError as err:
+            fail(f"обложка не нарисовалась: {err}")
+        prompt = arg
+    if not DRY:
+        append_jsonl(SONGS, {"at": now().isoformat(timespec="seconds"), "title": title, "cover_for": song_key,
+                             "cover": rel(p), **({"cover_prompt": prompt} if prompt else {})})
+    return p
+
+def send(where, target, path_arg, caption="", cover_arg="", cover=None):
     src = local(path_arg)
     e = entry_for(src)
     title = e.get("title") or src.stem
     is_snippet = ".snippet_" in src.name
     seconds = seconds_of(src)
     t = now()
-    cover = local(cover_arg) if cover_arg else cover_of(src)
-    if cover and cover.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
-        fail("обложка — картинка png, jpg или webp")
+    cover = cover or resolve_cover(cover_arg, src, title)
     if DRY:
         print(f"[сухой прогон] {'сниппет' if is_snippet else 'песня'} «{title}», {seconds:.0f} с, "
               f"{'обложка ' + rel(cover) if cover else 'без обложки'} — не отправлено")
@@ -266,9 +301,6 @@ def send(where, target, path_arg, caption="", cover_arg=""):
             files = {"audio": (src.name, audio, "audio/mpeg"), "cover": ("cover.jpg", thumb, "image/jpeg")}
             data["thumbnail"] = "attach://cover"
             note = ", с обложкой"
-            if cover_arg:              # назначенная руками обложка остаётся за песней: куски и повторы возьмут её
-                append_jsonl(SONGS, {"at": t.isoformat(timespec="seconds"), "title": title,
-                                     "cover_for": e.get("of") or rel(src), "cover": rel(cover)})
         except (RuntimeError, OSError) as err:
             cover, note = None, f", без обложки — не прицепилась: {str(err)[:120]}"
     label = f"🎵 «{title}»" + (" — кусок" if is_snippet else "") + (f"\n{caption.strip()}" if caption.strip() else "")
@@ -280,6 +312,7 @@ def send(where, target, path_arg, caption="", cover_arg=""):
                              "cover": rel(cover) if cover else None})
         append_jsonl(SONGS, {"at": t.isoformat(timespec="seconds"), "title": title, "posted": link, "file": rel(src)})
         print(f"выпущено в канал {t:%d.%m %H:%M}: «{title}», {seconds:.0f} с{note} — {link}")
+        return link
     elif where == "chat":
         tg(token, "sendAudio", {**data, "chat_id": target}, files)
         append_jsonl(DIALOGS, {"at": t.isoformat(timespec="seconds"), "dir": "out", "kind": "dm", "chat": target,
@@ -300,11 +333,66 @@ def send(where, target, path_arg, caption="", cover_arg=""):
         print(f"отправлено в ответ на №{target}: «{title}», {seconds:.0f} с{note}")
 
 
+def release(path_arg, caption, cover_arg="", start=None, length=None):
+    """Релиз: альбом «обложка + видео-сниппет» с подписью, следом вся песня треком с обложкой."""
+    src = local(path_arg)
+    if ".snippet_" in src.name:
+        fail("релиз собирается из целой песни — сниппет нарежется сам")
+    caption = (caption or "").strip()
+    if not caption:
+        fail("нужна подпись под альбомом")
+    if len(caption) > 1024:
+        fail(f"подпись {len(caption)} знаков — Telegram берёт до 1024")
+    title = entry_for(src).get("title") or src.stem
+    cover = resolve_cover(cover_arg, src, title)
+    if not cover and not DRY:
+        fail("у песни нет обложки: опиши её в cover — нарисую, или дай путь к картинке")
+    total = seconds_of(src)
+    length = max(8.0, min(float(length or 25), 45.0, total))
+    start = float(start) if start not in (None, "") else total / 3
+    start = max(0.0, min(start, total - length))
+    if DRY:
+        print(f"[сухой прогон] релиз «{title}»: {'обложка ' + rel(cover) if cover else 'обложка не нарисована'}, "
+              f"сниппет {length:.0f} с с {start:.0f}-й секунды, подпись {len(caption)} знаков — не отправлено")
+        return
+    s = secrets()
+    token, channel = s.get("TELEGRAM_BOT_TOKEN"), s.get("TELEGRAM_CHANNEL_ID")
+    if not token or not channel:
+        fail("нет ключей бота или канала — запусти tools/keys.py")
+    square = "scale={0}:{0}:force_original_aspect_ratio=increase,crop={0}:{0}"
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        img, thumb, clip = tmp / "cover.jpg", tmp / "thumb.jpg", tmp / "snippet.mp4"
+        ffmpeg("-i", cover, "-vf", square.format(1280), "-q:v", 2, img)
+        ffmpeg("-i", cover, "-vf", square.format(320), "-q:v", 4, thumb)
+        ffmpeg("-loop", 1, "-framerate", 25, "-i", cover, "-ss", f"{start:.1f}", "-t", f"{length:.1f}", "-i", src,
+               "-map", "0:v", "-map", "1:a", "-vf", square.format(1080) + ",format=yuv420p",
+               "-c:v", "libx264", "-tune", "stillimage", "-preset", "veryfast", "-crf", 24,
+               "-af", f"afade=t=in:st=0:d=0.6,afade=t=out:st={length - 2:.1f}:d=2", "-c:a", "aac", "-b:a", "192k",
+               "-t", f"{length:.1f}", "-shortest", "-movflags", "+faststart", clip)
+        media = [{"type": "photo", "media": "attach://img", "caption": caption},
+                 {"type": "video", "media": "attach://clip", "thumbnail": "attach://thumb", "width": 1080, "height": 1080,
+                  "duration": int(round(length)), "supports_streaming": True}]
+        msgs = tg(token, "sendMediaGroup", {"chat_id": channel, "media": json.dumps(media, ensure_ascii=False)},
+                  {"img": ("cover.jpg", img.read_bytes(), "image/jpeg"),
+                   "clip": ("snippet.mp4", clip.read_bytes(), "video/mp4"),
+                   "thumb": ("thumb.jpg", thumb.read_bytes(), "image/jpeg")})
+    t = now()
+    album = tg_link(msgs[0])
+    append_jsonl(POSTS, {"at": t.isoformat(timespec="seconds"), "text": f"🎵 «{title}» — релиз\n{caption}", "link": album,
+                         "message_id": msgs[0]["message_id"], "format": "release", "file": rel(src), "cover": rel(cover),
+                         "snippet": [round(start), round(length)]})
+    print(f"релиз «{title}» в канале {t:%d.%m %H:%M}: обложка и сниппет {length:.0f} с с {start:.0f}-й секунды — {album}")
+    send("channel", None, path_arg, cover=cover)
+
+
 def main():
-    a, cover = sys.argv[1:], ""
-    if "--cover" in a:
-        i = a.index("--cover")
-        cover, a = (a[i + 1] if i + 1 < len(a) else "").strip(), a[:i] + a[i + 2:]
+    a, flags = sys.argv[1:], {}
+    for flag in ("--cover", "--start", "--seconds"):
+        if flag in a:
+            i = a.index(flag)
+            flags[flag], a = (a[i + 1] if i + 1 < len(a) else "").strip(), a[:i] + a[i + 2:]
+    cover = flags.get("--cover", "")
     if not a:
         print(__doc__); sys.exit(1)
     cmd = a[0]
@@ -314,6 +402,8 @@ def main():
         snippet(a[1], a[2] if len(a) > 2 and a[2] else 25, a[3] if len(a) > 3 else None)
     elif cmd == "channel" and len(a) >= 2:
         send("channel", None, a[1], a[2] if len(a) > 2 else "", cover)
+    elif cmd == "release" and len(a) >= 3:
+        release(a[1], a[2], cover, flags.get("--start") or None, flags.get("--seconds") or None)
     elif cmd in ("chat", "comment") and len(a) >= 3:
         try:
             target = int(a[1])

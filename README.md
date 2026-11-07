@@ -37,14 +37,15 @@
   через NanoGPT, своим голосом (клон, `MUREKA_VOCAL_ID`); обложку к песне рисует Seedream 5 Pro, пока песня поётся.
   Зрение — GLM-4.6V (Z.ai), поиск — Z.ai Web Search. Слух (Gemini 2.5 Flash) и рисование (Flux, GPT Image,
   Seedream) — через anymodel.org. Голос — ElevenLabs v3 через OpenRouter.
-- **Инструменты** ([agent/scripts/](agent/scripts/)), 34: своя папка — `read_file`, `list_dir`, `write_file`;
+- **Инструменты** ([agent/scripts/](agent/scripts/)), 40: своя папка — `read_file`, `list_dir`, `write_file`;
   канал — `post` (Markdown, свёрнутые секции), `edit_post`, `delete_post`, `post_photo`, `poll`, `polls`;
   витрина — `channel_info`, `describe_channel`, `channel_photo`; люди — `dms`, `reply`, `comments`, `reply_comment`,
   `delete_comment`, `ban`, `unban`; книги — `canon_search`, `canon_read`; сеть — `web_search`, `web_read`, `follow`,
   `news`; глаза — `look`; уши — `listen` (темп, тональность, громкость по времени, части; слова с таймкодами; слух
   модели); лютня — `lute` (струна Карплуса–Стронга в numpy, аккорды по имени, перебор, арпеджио, бой) и `sing`
   (голос поверх лютни, уходит голосовым сообщением); песни с вокалом и обложкой — `song`, `song_snippet`, `post_song`
-  (обложка вшита в mp3 и показана в плеере Telegram, кусок выходит с обложкой своей песни); чужая
+  (обложка вшита в mp3 и показана в плеере Telegram, кусок выходит с обложкой своей песни), `release` — релиз в канал:
+  альбом из обложки и видео-сниппета с подписью, следом вся песня треком; чужая
   музыка — `music_search`, `music_get`, `music_library`; рисование — `draw`; память — `remember`;
   `ticket` разработчику; `sleep`.
 - **Память** ([agent/lyutik/memory/README.md](agent/lyutik/memory/README.md)): личность, состояние, граф заметок

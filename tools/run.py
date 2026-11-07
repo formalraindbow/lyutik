@@ -126,8 +126,15 @@ TOOLS = [
        "комментариев (comment). Трек уходит с обложкой песни; кусок — с обложкой своей песни.",
        optional=("caption", "chat", "comment", "cover"),
        path=("string", "путь к песне или куску"), caption=("string", "подпись"),
-       cover=("string", "путь к другой обложке, например из draw; она останется за песней"),
+       cover=("string", "другая обложка: путь к картинке или её описание — тогда нарисуется; останется за песней"),
        chat=("integer", "номер чата, если в личку"), comment=("integer", "номер комментария, если в ветку")),
+    fn("release", "Выпустить песню в канал релизом: альбом — обложка картинкой и видео-сниппет (обложка в кадре, кусок "
+       "песни), под ними твоя подпись; следом вся песня треком с обложкой. Такой пост пересылают в другие каналы.",
+       optional=("cover", "start", "seconds"),
+       path=("string", "путь к целой песне из ответа song"), caption=("string", "подпись под альбомом, до 1024 знаков"),
+       cover=("string", "обложка: путь к картинке или её описание — тогда нарисуется; без него — обложка песни"),
+       start=("integer", "с какой секунды сниппет; по умолчанию с трети песни"),
+       seconds=("integer", "длина сниппета, 8–45 с; по умолчанию 25")),
     fn("music_search", "Найти чужую музыку: до восьми находок с названием, исполнителем, длиной и ссылкой. Где — yandex "
        "(Яндекс Музыка, по умолчанию), soundcloud или youtube.",
        optional=("where",), query=("string", "что ищешь: исполнитель, песня, жанр"), where=("string", "yandex, soundcloud или youtube")),
@@ -375,6 +382,13 @@ def call_tool(name, args, dry):
                           "--cover", args.get("cover") or "", dry=dry, timeout=480)
         if name == "song_snippet":
             return script("song", "snippet", args["path"], args.get("seconds") or "", args.get("start") or "", dry=dry)
+        if name == "release":
+            problem = guard(args["caption"])
+            if problem:
+                return f"не опубликовано: {problem}"
+            extra = [x for k in ("cover", "start", "seconds") if args.get(k) not in (None, "")
+                     for x in (f"--{k}", args[k])]
+            return script("song", "release", args["path"], args["caption"], *extra, dry=dry, timeout=420)
         if name == "post_song":
             cover = ("--cover", args["cover"]) if args.get("cover") else ()
             if args.get("comment"):
