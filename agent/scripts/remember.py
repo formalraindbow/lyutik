@@ -29,14 +29,8 @@ def main():
     today, text = f"{now():%Y-%m-%d}", sys.argv[2].strip()
     if text.startswith(today):  # сегодняшнюю дату ставлю сам
         text = text[len(today):].lstrip(" ,.:·—–-")
-    found, missing = check(text)                       # книга учёта: цитаты сверяются с журналами
-    text = mark(text, missing)
     line = f"- {today} — {text}"
     ledger_note = ""
-    if found or missing:
-        ledger_note = f"\nцитаты: дословно {len(found)}, без следа в журнале {len(missing)}"
-        if missing:
-            ledger_note += " — помечены «(по памяти)»: " + "; ".join(f"«{m[:60]}»" for m in missing[:4])
     if not path.exists():
         path.write_text(f"# {name}\nс: {now():%Y-%m-%d}\n\n## События\n{line}\n\n## Связи\n", encoding="utf-8")
         print(f"новая заметка {path.relative_to(HOME)}: {line}{ledger_note}")

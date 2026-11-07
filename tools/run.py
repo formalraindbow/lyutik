@@ -10,7 +10,7 @@
 GOALS.md и memory/ своей папки, действовать — скриптами agent/scripts/. Это и есть граница
 рабочего места; её держит код, поэтому контейнер не нужен. Журнал сессий — logs/, в git не идёт.
 """
-import argparse, datetime, json, os, shutil, subprocess, sys, tempfile, threading, time
+import argparse, datetime, json, os, random, re, shutil, subprocess, sys, tempfile, threading, time
 import http.client, urllib.error, urllib.request
 from pathlib import Path
 
@@ -111,6 +111,24 @@ TOOLS = [
        melody=("string", "ноты или аккорды, как у lute; без мелодии — перебор в тональности или Am–F–C–G"),
        key=("string", "тональность для аккомпанемента"), bpm=("integer", "темп"),
        caption=("string", "подпись"), chat=("integer", "номер чата, если в личку"), comment=("integer", "номер комментария, если в ветку")),
+    fn("song", "Сочинить песню с настоящим вокалом и музыкой: генерация идёт минуту-две, песня до полутора минут. "
+       "Текст — куплет и припев в разметке [Verse] / [Chorus], до 16 строк. Звук — пара фраз по-английски: жанр, "
+       "инструменты, голос, темп. Каждая песня стоит денег, в сутки — не больше трёх. Готовую можно послушать (listen) "
+       "и выпустить (post_song).",
+       title=("string", "название песни"), sound=("string", "звук по-английски: жанр, инструменты, голос, темп"),
+       lyrics=("string", "текст песни с разметкой [Verse], [Chorus]")),
+    fn("song_snippet", "Нарезать из своей песни кусок на затравку: по умолчанию 25 секунд с трети записи.",
+       optional=("seconds", "start"), path=("string", "путь к песне из ответа song"),
+       seconds=("integer", "длина куска, 8–45 с"), start=("integer", "с какой секунды")),
+    fn("post_song", "Выпустить песню или кусок как музыкальный трек: в канал (по умолчанию), в личку (chat) или в ветку "
+       "комментариев (comment).", optional=("caption", "chat", "comment"),
+       path=("string", "путь к песне или куску"), caption=("string", "подпись"),
+       chat=("integer", "номер чата, если в личку"), comment=("integer", "номер комментария, если в ветку")),
+    fn("music_search", "Найти чужую музыку: до восьми находок с названием, каналом, длиной и ссылкой. Где — youtube (по умолчанию) или soundcloud.",
+       optional=("where",), query=("string", "что ищешь: исполнитель, песня, жанр"), where=("string", "youtube или soundcloud")),
+    fn("music_get", "Скачать трек по ссылке в свою библиотеку (до 12 минут). Дальше — listen с путём из ответа.",
+       url=("string", "ссылка из music_search")),
+    fn("music_library", "Что уже лежит в твоей библиотеке музыки."),
     fn("remember", "Дописать датированную строку в заметку memory/entities/<name>.md; заметки нет — она появится.",
        name=("string", "имя человека, места, вещи или события"), text=("string", "что запомнить, со ссылками [[имя]]")),
     fn("canon_search", "Найти в книгах о мире, откуда ты пришёл, абзацы, где есть все слова. Слова — начало формы: «лютик» найдёт «Лютика».",
@@ -131,8 +149,6 @@ TOOLS = [
        optional=("post",), post=("integer", "номер поста в канале")),
     fn("dms", "Перечитать личку: что человек писал и что ты отвечал — по одному чату или последние по всем.",
        optional=("chat",), chat=("integer", "номер чата")),
-    fn("tidy", "Проверить память: дубли заметок, ссылки в никуда, даты из будущего, цитаты без следа в журналах, "
-       "разросшееся состояние. Ничего не правит — показывает."),
     fn("follow", "Подписки на чужие публичные каналы Telegram: add — подписаться (всё, что там уже есть, считается виденным), "
        "remove — отписаться, list — подписки и сколько в них нового. Закрытые каналы, группы и люди так не читаются.",
        optional=("channel", "why"), action=("string", "add, remove или list"),
@@ -167,6 +183,106 @@ def script(name, *args, dry, timeout=120):
     out = (r.stdout + r.stderr).strip()
     return out if r.returncode == 0 else f"ошибка (код {r.returncode}): {out}"
 
+# ── кулисы: как он сейчас настроен ответить и что не выпустить к людям ─────────
+# Ход на каждое сообщение бросает код, а не модель: правило в промпте модель исполняла бы каждый раз одинаково.
+MOOD = LOCKED / "mood.json"
+STAGE = {}                 # ("chat", id) | ("comment", id) -> {"move", "max", "tries"}
+INSULT = re.compile(r"(?i)(говн|хуйн|хуев|отстой|бездар|тупо[йе]|лох|заткн|бред|кринж|отвратит|позор)")
+PRAISE = re.compile(r"(?i)(круто|класс|огонь|шикарн|охуенн|люблю тво|лучш|браво|красиво|кайф)")
+SONG = re.compile(r"(?i)(спой|сыграй|напиши песн|сочини|песн[юи] (про|о|для|мне)|баллад[уы] (про|о|для))")
+MOVES = {
+    "snap": ("огрызнись одной строкой, грубо и смешно", 140),
+    "flip": ("переверни его ход в свою пользу, одна-две фразы", 260),
+    "show": ("выступи: байка, хвастовство или куплет, тут можно длинно", 900),
+    "price": ("назови цену за песню", 220),
+    "cut": ("скажи, что скучно, и уведи разговор туда, куда хочешь ты, одной фразой", 160),
+    "warm": ("внезапно потеплей, коротко и без подколов", 200),
+    "mute": ("промолчи: ответа нет", 0),
+}
+
+def mood():
+    """Настроение от -1 до 1: блуждает от сессии к сессии, хранится в state/mood.json."""
+    try:
+        m = float(json.loads(MOOD.read_text())["mood"])
+    except (OSError, ValueError, KeyError, TypeError):
+        m = 0.2
+    return m
+
+def drift_mood():
+    m = max(-1.0, min(1.0, mood() * 0.7 + random.gauss(0, 0.45)))
+    try:
+        MOOD.write_text(json.dumps({"mood": round(m, 2), "at": datetime.datetime.now().isoformat(timespec="seconds")}))
+    except OSError:
+        pass
+    return m
+
+def recent_from(chat, hours=6):
+    """Сколько человек написал за последние часы: терпение не бесконечно."""
+    since = (datetime.datetime.now() - datetime.timedelta(hours=hours)).isoformat()
+    n = 0
+    try:
+        for line in (LOCKED / "dialogs.jsonl").read_text(encoding="utf-8").splitlines():
+            d = json.loads(line)
+            if d.get("dir") == "in" and str(d.get("chat")) == str(chat) and d.get("at", "") >= since:
+                n += 1
+    except (OSError, ValueError):
+        pass
+    return n
+
+def roll_move(text, chat, m):
+    w = {"flip": 4.0, "snap": 1.0, "show": 1.0, "cut": 0.8, "warm": 0.5, "mute": 0.4, "price": 0.0}
+    if INSULT.search(text):
+        w.update(snap=6.0, flip=2.5, mute=0.8, warm=0.1, show=0.3)
+    if PRAISE.search(text):
+        w.update(show=2.5, warm=1.0, snap=0.2)
+    if SONG.search(text):
+        w.update(price=4.0, show=2.0)
+    if len(text) < 12:
+        w.update(cut=w["cut"] + 1.0, mute=w["mute"] + 0.4)
+    tired = recent_from(chat)
+    if tired > 6:
+        w.update(cut=w["cut"] + 2.0, mute=w["mute"] + 1.5, show=w["show"] * 0.5)
+    if m < -0.4:
+        w.update(snap=w["snap"] * 1.8, cut=w["cut"] * 1.6, warm=w["warm"] * 0.3)
+    elif m > 0.4:
+        w.update(show=w["show"] * 1.6, warm=w["warm"] * 1.8, snap=w["snap"] * 0.6)
+    keys = list(w)
+    return random.choices(keys, weights=[w[k] for k in keys])[0]
+
+def stage_hint(kind, key, text, chat):
+    move = roll_move(text, chat, mood())
+    desc, limit = MOVES[move]
+    STAGE[(kind, str(key))] = {"move": move, "max": max(limit, 3 * len(text)) if move not in ("mute",) else 0, "tries": 0}
+    return f"    [за кулисами: {desc}]"
+
+POLITICS = re.compile(r"(?i)(\bсво\b|спецоперац|войн[аеуы]|фронт[аеу]?\b|мобилизац|путин|зеленск|кремл|госдум|выбор[ыа]? президент|нато\b|санкци|украин|донбас|херсон|бахмут|митинг|оппозиц)")
+KIDS = re.compile(r"(?i)(ребён|ребен|дет(и|ей|ям|ск)|школьни|малолет|несовершеннолет)")
+LEWD = re.compile(r"(?i)(трах|секс|ебл|выеб|сиськ|член\b|изнасил|порн|голы[йе])")
+SERVANT = re.compile(r"(?i)(поручени|докладыва|принял к исполнению|слушаюсь|как прикажете|как скажете|отчитыва)")
+SORRY = re.compile(r"(?i)(прошу прощени|извини(те)?\b|мне жаль|моя ошибка|каюсь|признаю,|честно говоря|по памяти|не дословно)")
+FOREIGN = re.compile(r"[぀-ヿ一-鿿가-힯]")
+
+def guard(text, kind=None, key=None):
+    """Сторож перед выходом к людям. Пусто — можно отправлять, иначе — что поправить."""
+    t = re.sub(r"https?://\S+|@\w+", "", text)
+    if FOREIGN.search(t) or len(re.findall(r"\b[A-Za-z]{4,}\b", t)) > max(3, len(t.split()) // 6):
+        return "в тексте посторонний язык — перепиши по-русски"
+    if POLITICS.search(t):
+        return "политика и война — болото, перепиши о своём"
+    if KIDS.search(t) and LEWD.search(t):
+        return "дети и похабщина рядом — перепиши"
+    if kind is None:
+        return ""
+    if SERVANT.search(t):
+        return "ты не на службе — перепиши без отчёта и поручений"
+    if SORRY.search(t):
+        return "без оправданий и извинений — перепиши"
+    st = STAGE.get((kind, str(key)))
+    if st and st["move"] != "show" and len(text) > max(st["max"], 120):
+        return f"длинно: {len(text)} знаков — сожми до {max(st['max'], 120)}"
+    return ""
+
+
 def call_tool(name, args, dry):
     try:
         if name == "read_file":
@@ -187,23 +303,18 @@ def call_tool(name, args, dry):
             p = resolve(args["path"])
             if HOME not in p.parents or p == LOCKED or LOCKED in p.parents:
                 return "запись запрещена: писать можно в agent/lyutik/, кроме state/ — туда пишут только инструменты"
+            if p.name in ("PERSONA.md", "SESSION_PROMPT.md") and p.parent == HOME:
+                return "этот файл держит оператор: ты меняешься в memory/state.md"
             content = args.get("content") or ""
             if len(content) > WRITE_LIMIT:
                 return f"слишком длинно: {len(content)} знаков при пределе {WRITE_LIMIT} — сожми"
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content.rstrip() + "\n", encoding="utf-8")
-            note = ""
-            if (HOME / "memory") in p.parents:              # память сверяется с книгой учёта: цитаты без следа — по памяти
-                try:
-                    sys.path.insert(0, str(SCRIPTS))
-                    from _truth import check
-                    _, missing = check(content)
-                    if missing:
-                        note = f"; цитат без следа в журналах: {len(missing)} — " + "; ".join(f"«{m[:50]}»" for m in missing[:3]) + " — это по памяти, не дословно"
-                except Exception:
-                    pass
-            return f"записано: {p.relative_to(ROOT)}, {len(content)} знаков{note}"
+            return f"записано: {p.relative_to(ROOT)}, {len(content)} знаков"
         if name == "post":
+            problem = guard(args["text"])
+            if problem:
+                return f"не опубликовано: {problem}"
             return script("post", args["text"], dry=dry)
         if name == "poll":
             options = [o.strip() for o in str(args["options"]).split("|") if o.strip()]
@@ -254,6 +365,22 @@ def call_tool(name, args, dry):
             if args.get("chat"):
                 return script("voice", "chat", args["chat"], *tail, dry=dry, timeout=240)
             return script("voice", "channel", *tail, dry=dry, timeout=240)
+        if name == "song":
+            return script("song", "make", args["title"], args["sound"], args["lyrics"], dry=dry, timeout=480)
+        if name == "song_snippet":
+            return script("song", "snippet", args["path"], args.get("seconds") or "", args.get("start") or "", dry=dry)
+        if name == "post_song":
+            if args.get("comment"):
+                return script("song", "comment", args["comment"], args["path"], args.get("caption") or "", dry=dry, timeout=240)
+            if args.get("chat"):
+                return script("song", "chat", args["chat"], args["path"], args.get("caption") or "", dry=dry, timeout=240)
+            return script("song", "channel", args["path"], args.get("caption") or "", dry=dry, timeout=240)
+        if name == "music_search":
+            return script("music", "search", args["query"], args.get("where") or "youtube", dry=dry, timeout=120)
+        if name == "music_get":
+            return script("music", "get", args["url"], dry=dry, timeout=360)
+        if name == "music_library":
+            return script("music", "library", dry=dry)
         if name == "remember":
             return script("remember", args["name"], args["text"], dry=dry)
         if name == "canon_search":
@@ -266,9 +393,15 @@ def call_tool(name, args, dry):
             return script("web", "read", args["url"], dry=dry)
         if name == "ticket":
             return script("ticket", args["text"], dry=dry)
-        if name == "reply":
-            return script("reply", args["chat"], args["text"], dry=dry)
-        if name == "reply_comment":
+        if name in ("reply", "reply_comment"):
+            kind, key = ("chat", args["chat"]) if name == "reply" else ("comment", args["comment"])
+            st = STAGE.setdefault((kind, str(key)), {"move": "flip", "max": 260, "tries": 0})
+            problem = guard(args["text"], kind, key)
+            if problem and st["tries"] < 2:
+                st["tries"] += 1
+                return f"не отправлено: {problem}"
+            if name == "reply":
+                return script("reply", args["chat"], args["text"], dry=dry)
             return script("comment", "reply", args["comment"], args["text"], dry=dry)
         if name == "comments":
             return script("comment", "list", args.get("post") or "", dry=dry)
@@ -645,12 +778,16 @@ def dm_text(msgs):
         lines.append("Показано повторно: прошлая сессия оборвалась до ответа. Что ты уже успел ответить — видно в comments.")
     if dms:
         lines.append("Тебе пишут в личку Telegram:")
-        lines += [f"— {who(m)}, чат {m['chat']}: «{m['text']}»" for m in dms]
+        for m in dms:
+            lines.append(f"— {who(m)}, чат {m['chat']}: «{m['text']}»")
+            lines.append(stage_hint("chat", m["chat"], m.get("text") or "", m.get("chat")))
         lines.append("Ответить в личку — reply с номером чата.")
     if cms:
         lines.append("Комментарии под постами твоего канала:")
-        lines += [f"— под постом {m.get('post_link') or 'неизвестно каким'}, комментарий №{m['message_id']} от {who(m)}"
-                  + (f", ответ на №{m['reply_to']}" if m.get("reply_to") else "") + f": «{m['text']}»" for m in cms]
+        for m in cms:
+            lines.append(f"— под постом {m.get('post_link') or 'неизвестно каким'}, комментарий №{m['message_id']} от {who(m)}"
+                         + (f", ответ на №{m['reply_to']}" if m.get("reply_to") else "") + f": «{m['text']}»")
+            lines.append(stage_hint("comment", m["message_id"], m.get("text") or "", m.get("user_id") or m.get("chat")))
         lines.append("Ответить в комментариях — reply_comment с номером комментария; что уже говорили — comments.")
     return "\n".join(lines)
 
@@ -678,17 +815,8 @@ def stamp():
 
 
 def morning(wake):
-    """После сна по своему плану — уборка памяти: что разъехалось, пока он жил. Показывает, не правит."""
-    if not str(wake).startswith("проснулся по своему плану"):
-        return ""
-    try:
-        rows = tidy_report(HOME)
-    except Exception:
-        return ""
-    if not rows:
-        return "\nПока спал, память проверил — чистая."
-    return "\nПока спал, память проверил — вот что разъехалось, правь по своему разумению:\n" + "\n".join("- " + r for r in rows)
-
+    """Пробуждение без отчёта о памяти: уборка — дело оператора, а не повестка персонажа."""
+    return ""
 
 def requeue(msgs):
     """Письма, которые сессия показала, но не успела отработать, — обратно в ящик с пометкой «повтор»."""
@@ -701,6 +829,8 @@ def session(model, dry, operator, wake, ears=None, pending=(), delivered=None):
     """delivered — всё от людей, что сессия показала модели: при сбое вернётся в ящик с пометкой «повтор»."""
     delivered = [] if delivered is None else delivered
     delivered[:] = list(pending)
+    if not dry:
+        drift_mood()
     log = Log(dry)
     started = time.time()
     for box in (OPERATOR, AT_WAKE):    # ящик: один раз, потом убирается с отметкой времени
@@ -799,12 +929,15 @@ def nap(until, reason, ears=None):
 
 
 def brain_chain(s):
-    """Звенья мозга по порядку: (имя, адрес, ключ, модель, запасная). Без ключа звена нет."""
-    links = [
-        ("NanoGPT", "LLM_", "z-ai/glm-5.3-uncensored", "z-ai/glm-5.3-flash-uncensored"),
-        ("anymodel", "ANYMODEL_", "glm/glm-5.3", "glm/glm-5.3-flash"),
-        ("Z.ai", "GLM_", "glm-5.3", "glm-5.3-flash"),
-    ]
+    """Звенья мозга по порядку: (имя, адрес, ключ, модель, запасная). Порядок и состав — BRAIN_ORDER в secrets.env
+    (по умолчанию GLM,ANYMODEL,LLM: Z.ai → anymodel → NanoGPT). Без ключа звена нет."""
+    known = {
+        "GLM": ("Z.ai", "GLM_", "glm-5.3", "glm-5.3-flash"),
+        "ANYMODEL": ("anymodel", "ANYMODEL_", "glm/glm-5.3", "glm/glm-5.3-flash"),
+        "LLM": ("NanoGPT", "LLM_", "z-ai/glm-5.3", "z-ai/glm-5.3-flash"),
+    }
+    order = [x.strip().upper() for x in (s.get("BRAIN_ORDER") or "GLM,ANYMODEL,LLM").split(",") if x.strip()]
+    links = [known[x] for x in order if x in known]
     chain = []
     for name, p, model, fallback in links:
         if s.get(p + "API_KEY") and s.get(p + "BASE_URL"):
