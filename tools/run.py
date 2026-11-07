@@ -113,16 +113,20 @@ TOOLS = [
        caption=("string", "подпись"), chat=("integer", "номер чата, если в личку"), comment=("integer", "номер комментария, если в ветку")),
     fn("song", "Сочинить песню с настоящим вокалом и музыкой: генерация идёт минуту-две, песня до полутора минут. "
        "Текст — куплет и припев в разметке [Verse] / [Chorus], до 16 строк. Звук — пара фраз по-английски: жанр, "
-       "инструменты, голос, темп. Каждая песня стоит денег, в сутки — не больше трёх. Готовую можно послушать (listen) "
-       "и выпустить (post_song).",
+       "инструменты, голос, темп. Обложка рисуется, пока поётся песня, и выходит вместе с треком. Каждая песня стоит "
+       "денег, в сутки — не больше трёх. Готовую можно послушать (listen) и выпустить (post_song).",
        title=("string", "название песни"), sound=("string", "звук по-английски: жанр, инструменты, голос, темп"),
-       lyrics=("string", "текст песни с разметкой [Verse], [Chorus]")),
+       lyrics=("string", "текст песни с разметкой [Verse], [Chorus]"),
+       cover=("string", "что на обложке: одна картинка из этой песни твоими словами — что в кадре, свет, манера "
+                        "(фото, живопись, гравюра…)")),
     fn("song_snippet", "Нарезать из своей песни кусок на затравку: по умолчанию 25 секунд с трети записи.",
        optional=("seconds", "start"), path=("string", "путь к песне из ответа song"),
        seconds=("integer", "длина куска, 8–45 с"), start=("integer", "с какой секунды")),
     fn("post_song", "Выпустить песню или кусок как музыкальный трек: в канал (по умолчанию), в личку (chat) или в ветку "
-       "комментариев (comment).", optional=("caption", "chat", "comment"),
+       "комментариев (comment). Трек уходит с обложкой песни; кусок — с обложкой своей песни.",
+       optional=("caption", "chat", "comment", "cover"),
        path=("string", "путь к песне или куску"), caption=("string", "подпись"),
+       cover=("string", "путь к другой обложке, например из draw; она останется за песней"),
        chat=("integer", "номер чата, если в личку"), comment=("integer", "номер комментария, если в ветку")),
     fn("music_search", "Найти чужую музыку: до восьми находок с названием, исполнителем, длиной и ссылкой. Где — yandex "
        "(Яндекс Музыка, по умолчанию), soundcloud или youtube.",
@@ -367,15 +371,19 @@ def call_tool(name, args, dry):
                 return script("voice", "chat", args["chat"], *tail, dry=dry, timeout=240)
             return script("voice", "channel", *tail, dry=dry, timeout=240)
         if name == "song":
-            return script("song", "make", args["title"], args["sound"], args["lyrics"], dry=dry, timeout=480)
+            return script("song", "make", args["title"], args["sound"], args["lyrics"],
+                          "--cover", args.get("cover") or "", dry=dry, timeout=480)
         if name == "song_snippet":
             return script("song", "snippet", args["path"], args.get("seconds") or "", args.get("start") or "", dry=dry)
         if name == "post_song":
+            cover = ("--cover", args["cover"]) if args.get("cover") else ()
             if args.get("comment"):
-                return script("song", "comment", args["comment"], args["path"], args.get("caption") or "", dry=dry, timeout=240)
+                return script("song", "comment", args["comment"], args["path"], args.get("caption") or "", *cover,
+                              dry=dry, timeout=240)
             if args.get("chat"):
-                return script("song", "chat", args["chat"], args["path"], args.get("caption") or "", dry=dry, timeout=240)
-            return script("song", "channel", args["path"], args.get("caption") or "", dry=dry, timeout=240)
+                return script("song", "chat", args["chat"], args["path"], args.get("caption") or "", *cover,
+                              dry=dry, timeout=240)
+            return script("song", "channel", args["path"], args.get("caption") or "", *cover, dry=dry, timeout=240)
         if name == "music_search":
             return script("music", "search", args["query"], args.get("where") or "", dry=dry, timeout=120)
         if name == "music_get":
