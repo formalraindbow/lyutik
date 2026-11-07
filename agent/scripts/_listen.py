@@ -88,7 +88,9 @@ def whisper_model():
     """Модель Whisper: папка с файлами, если скачана вручную (WHISPER_DIR или ~/.local/share/lyutik/whisper-small),
     иначе имя «small» — тогда её скачает сам faster-whisper."""
     d = os.environ.get("WHISPER_DIR") or os.path.expanduser("~/.local/share/lyutik/whisper-small")
-    return d if os.path.exists(os.path.join(d, "model.bin")) and os.path.exists(os.path.join(d, "config.json")) else "small"
+    if os.path.exists(os.path.join(d, "model.bin")) and os.path.exists(os.path.join(d, "config.json")):
+        return d
+    return os.environ.get("WHISPER_MODEL") or "small"     # на маленьком сервере — tiny: small не влезает в память
 
 WORDS_SECONDS = 300      # слова разбираются с начала и не дальше: Whisper на длинном треке без голоса
 WORDS_BUDGET = 180       # бюджет на разбор слов; сверх него — стоп, с пометкой до куда успел
