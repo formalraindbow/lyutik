@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Чужая музыка: найти, скачать в свою библиотеку, вспомнить, что там есть.
 
-    music.py search "<запрос>" [youtube|soundcloud]
+    music.py search "<запрос>" [yandex|soundcloud|youtube]
     music.py get <ссылка>
     music.py library
 
-search — до восьми находок: название, канал, длина, просмотры, ссылка. Где искать по умолчанию — MUSIC_DEFAULT
-(на сервере soundcloud: YouTube оттуда не даёт скачивать).
+search — до восьми находок: название, исполнитель или канал, длина, ссылка. Где искать по умолчанию — MUSIC_DEFAULT
+(на сервере yandex: Яндекс Музыка по подписке, токен YANDEX_MUSIC_TOKEN; YouTube из дата-центра скачивать не даёт).
 get — звук по ссылке в agent/lyutik/media/library/ (до 12 минут), список — state/library.jsonl. Послушать — listen с путём.
 library — что уже лежит в библиотеке.
 Поиск и скачивание идут через yt-dlp из окружения слуха (EARS_PYTHON в secrets.env).
@@ -35,10 +35,28 @@ def clock(sec):
     sec = int(float(sec or 0))
     return f"{sec // 60}:{sec % 60:02d}"
 
+def ears_python():
+    return secrets().get("EARS_PYTHON") or str(Path.home() / ".local" / "share" / "lyutik" / "ears" / "bin" / "python")
+
+def yandex(*args, timeout=120):
+    r = subprocess.run([ears_python(), str(Path(__file__).with_name("_yandex.py")), *args],
+                       capture_output=True, text=True, timeout=timeout)
+    if r.returncode:
+        fail(f"Яндекс Музыка: {(r.stderr or r.stdout).strip()[-240:]}")
+    return [l.split("\t") for l in r.stdout.splitlines() if "\t" in l]
+
 def search(query, where="youtube"):
+    if where.lower() == "yandex":
+        rows = yandex("search", query)
+        if not rows:
+            fail(f"по «{query}» на Яндекс Музыке ничего")
+        print(f"по «{query}» (Яндекс Музыка):")
+        for i, (tid, title, artists, sec) in enumerate(rows, 1):
+            print(f"[{i}] {title} — {artists} · {clock(sec)}\n    yandex:{tid}")
+        return
     prefix = {"youtube": "ytsearch8", "soundcloud": "scsearch8"}.get(where.lower())
     if not prefix:
-        fail("где искать — youtube или soundcloud")
+        fail("где искать — yandex, soundcloud или youtube")
     r = subprocess.run([ytdlp(), f"{prefix}:{query}", "--flat-playlist", "--print",
                         "%(title)s\t%(channel,uploader)s\t%(duration)s\t%(view_count)s\t%(url)s"],
                        capture_output=True, text=True, timeout=90)
@@ -50,9 +68,29 @@ def search(query, where="youtube"):
         v = f", {int(views):,} просм.".replace(",", " ") if views.isdigit() else ""
         print(f"[{i}] {title} — {ch} · {clock(dur) if dur not in ('NA', '') else '?'}{v}\n    {url}")
 
+def get_yandex(tid, url):
+    have = next((x for x in read_jsonl(LIB) if x.get("url") == url), None)
+    if have and (ROOT / have["path"]).exists():
+        print(f"уже в библиотеке: {have['path']} — «{have['title']}»")
+        return
+    LIB_DIR.mkdir(parents=True, exist_ok=True)
+    out = LIB_DIR / f"yandex_{tid.replace(':', '_')}.mp3"
+    if DRY:
+        print(f"[сухой прогон] скачал бы {url} в {out.relative_to(ROOT)}")
+        return
+    rows = yandex("get", tid, str(out), timeout=300)
+    title, artists, sec = (rows[-1] + ["", "", "0"])[:3] if rows else ("?", "?", "0")
+    rel = str(out.relative_to(ROOT))
+    append_jsonl(LIB, {"at": now().isoformat(timespec="seconds"), "title": title, "channel": artists, "url": url,
+                       "path": rel, "seconds": int(sec or 0)})
+    print(f"в библиотеке: {rel} — «{title}», {artists}, {clock(sec)}. Послушать — listen с этим путём.")
+
 def get(url):
+    m = re.match(r"^yandex:(\d+(?::\d+)?)$", url) or re.search(r"music\.yandex\.\w+/(?:album/\d+/)?track/(\d+)", url)
+    if m:
+        return get_yandex(m.group(1), url if url.startswith("yandex:") else f"yandex:{m.group(1)}")
     if not re.match(r"^https?://", url):
-        fail("нужна ссылка http(s)://…")
+        fail("нужна ссылка http(s)://… или yandex:<номер> из поиска")
     have = next((x for x in read_jsonl(LIB) if x.get("url") == url), None)
     if have and (ROOT / have["path"]).exists():
         print(f"уже в библиотеке: {have['path']} — «{have['title']}»")
