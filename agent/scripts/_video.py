@@ -102,25 +102,31 @@ def main():
     shadow.paste((0, 0, 0, 165), (80, 80, 80 + CARD, 80 + CARD))
     shadow = shadow.filter(ImageFilter.GaussianBlur(30))
 
-    def scene(scale=1.0, angle=0.0, alpha=1.0):
-        frame = bg.copy()
+    def scene(scale=1.0, angle=0.0, alpha=1.0, base=None, dy=0):
+        frame = (base or bg).copy()
         c = card if scale == 1 and angle == 0 else card.resize((int(CARD * scale),) * 2, Image.BILINEAR).rotate(
             angle, Image.BILINEAR, expand=True)
-        s = shadow if scale == 1 and angle == 0 else shadow.resize((int(shadow.width * scale),) * 2, Image.BILINEAR).rotate(
-            angle, Image.BILINEAR, expand=True)
+        s = shadow if abs(angle) < 1.5 and abs(scale - 1) < 0.02 else shadow.resize(   # размытой тени покачивание не видно —
+            (int(shadow.width * scale),) * 2, Image.BILINEAR).rotate(angle, Image.BILINEAR, expand=True)   # крутим её только во влёте
         if alpha < 1:
             c = c.copy()
             c.putalpha(c.getchannel("A").point(lambda v: int(v * alpha)))
             s = s.copy()
             s.putalpha(s.getchannel("A").point(lambda v: int(v * alpha)))
-        frame.alpha_composite(s, ((W - s.width) // 2, CARD_Y - s.height // 2 + 22))
-        frame.alpha_composite(c, ((W - c.width) // 2, CARD_Y - c.height // 2))
+        frame.alpha_composite(s, ((W - s.width) // 2, CARD_Y - s.height // 2 + 22 + dy))
+        frame.alpha_composite(c, ((W - c.width) // 2, CARD_Y - c.height // 2 + dy))
         return frame
 
-    still = scene()
-    titled = still.copy()
+    ph = [rnd.uniform(0, 6.3) for _ in range(5)]
+    def drift(t):
+        """Флуктуации после вступления: медленное покачивание до ±0,8°, дыхание ±0,8%, сдвиг на пару пикселей."""
+        angle = 0.55 * math.sin(2 * math.pi * 0.13 * t + ph[0]) + 0.25 * math.sin(2 * math.pi * 0.37 * t + ph[1])
+        scale = 1 + 0.006 * math.sin(2 * math.pi * 0.21 * t + ph[2]) + 0.002 * math.sin(2 * math.pi * 0.53 * t + ph[3])
+        return scale, angle, int(round(3 * math.sin(2 * math.pi * 0.17 * t + ph[4])))
+
     head = title_layer(title)
-    titled.alpha_composite(head)
+    bg_titled = bg.copy()
+    bg_titled.alpha_composite(head)
     for i, s in enumerate(subs):
         nxt = subs[i + 1]["start"] - 0.05 if i + 1 < len(subs) else length
         s["show"] = max(TITLE_IN, s["start"] - 0.1)
@@ -157,16 +163,19 @@ def main():
         else:
             if t < SETTLE:                                            # влёт карточки: с наклоном и крупнее — встаёт ровно
                 e = ease_out((t - DROP) / (SETTLE - DROP))
-                img_t = scene(1.18 - 0.18 * e, -7 * (1 - e), min(1.0, (t - DROP) / 0.12))
-            elif t < TITLE_IN:
-                img_t = still
-            elif t < TITLE_IN + 0.3:
-                img_t = still.copy()
-                h2 = head.copy()
-                h2.putalpha(head.getchannel("A").point(lambda v, a=(t - TITLE_IN) / 0.3: int(v * a)))
-                img_t.alpha_composite(h2)
+                sc, an, dy = drift(t)
+                img_t = scene((1.18 - 0.18 * e) * sc, -7 * (1 - e) + an * e, min(1.0, (t - DROP) / 0.12), dy=int(dy * e))
             else:
-                img_t = titled
+                if t < TITLE_IN:
+                    base = bg
+                elif t < TITLE_IN + 0.3:
+                    base = bg.copy()
+                    h2 = head.copy()
+                    h2.putalpha(head.getchannel("A").point(lambda v, a=(t - TITLE_IN) / 0.3: int(v * a)))
+                    base.alpha_composite(h2)
+                else:
+                    base = bg_titled
+                img_t = scene(*drift(t)[:2], base=base, dy=drift(t)[2])
             live = [s for s in subs if s["show"] <= t < s["hide"]]
             if live:
                 img_t = img_t.copy()
