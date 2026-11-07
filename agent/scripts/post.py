@@ -11,7 +11,7 @@
 Печатает ссылку на пост или понятную ошибку. Каждый пост записывается в state/posts.jsonl.
 """
 import json, sys, urllib.error, urllib.request
-from _common import DRY, STATE, append_jsonl, now, read_jsonl, secrets, tg_link
+from _common import DRY, STATE, append_jsonl, md_caption, now, plain_caption, read_jsonl, secrets, tg_link
 
 MAX_RICH, MAX_PLAIN = 32768, 4096                    # пределы Telegram: с разметкой и без
 POSTS = STATE / "posts.jsonl"
@@ -51,6 +51,22 @@ def edit(message_id, text):
     token, chat = s.get("TELEGRAM_BOT_TOKEN"), s.get("TELEGRAM_CHANNEL_ID")
     if not token or not chat:
         refuse("нет ключей бота или канала — запусти tools/keys.py")
+    if rec.get("format") in ("release", "song", "photo"):    # у медиа правится подпись, rich-разметку она не берёт
+        if len(text) > 1024:
+            refuse(f"подпись — до 1024 знаков, а тут {len(text)}")
+        note = ""
+        try:
+            api(token, "editMessageCaption", chat_id=chat, message_id=message_id, caption=md_caption(text), parse_mode="HTML")
+        except TelegramError as e:
+            try:
+                api(token, "editMessageCaption", chat_id=chat, message_id=message_id, caption=plain_caption(text))
+            except TelegramError as e2:
+                refuse(str(e2))
+            note = f" — без разметки: {e}"
+        rec.update(text=text, edited_at=t.isoformat(timespec="seconds"))
+        POSTS.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+        print(f"подпись к посту {message_id} поправлена {t:%d.%m %H:%M}: {rec.get('link', '')}{note}")
+        return
     fmt, note = "rich", ""
     try:
         api(token, "editMessageText", chat_id=chat, message_id=message_id, rich_message={"markdown": text})

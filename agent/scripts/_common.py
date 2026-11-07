@@ -44,3 +44,24 @@ def read_jsonl(path):
         except ValueError:
             pass
     return out
+
+
+def md_caption(text):
+    """Markdown подписи → HTML Telegram: **жирный**, *курсив* и _курсив_, `код`, [ссылка](url), > цитата, # заголовок.
+    Подписи к медиа rich-разметку не берут, поэтому так."""
+    import html as _html, re as _re
+    t = _html.escape(text.strip(), quote=False)
+    t = _re.sub(r"(?m)^#{1,6}\s*(.+)$", r"<b>\1</b>", t)
+    t = _re.sub(r"(?m)^&gt;\s?(.*)$", r"<blockquote>\1</blockquote>", t)
+    t = _re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t, flags=_re.S)
+    t = _re.sub(r"(?<![\w*])\*(?=\S)(.+?)(?<=\S)\*(?![\w*])", r"<i>\1</i>", t)
+    t = _re.sub(r"(?<![\w_])_(?=\S)(.+?)(?<=\S)_(?![\w_])", r"<i>\1</i>", t)
+    t = _re.sub(r"`([^`\n]+)`", r"<code>\1</code>", t)
+    return _re.sub(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)", r'<a href="\2">\1</a>', t)
+
+def plain_caption(text):
+    """Та же подпись без разметки — если Telegram не разобрал HTML."""
+    import re as _re
+    t = _re.sub(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)", r"\1 (\2)", text.strip())
+    t = _re.sub(r"(?m)^#{1,6}\s*", "", t)
+    return t.replace("**", "").replace("`", "")

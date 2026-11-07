@@ -25,7 +25,7 @@ release — релиз в канал: альбом из обложки карт�
 """
 import json, re, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request, uuid
 from pathlib import Path
-from _common import DRY, HOME, ROOT, STATE, append_jsonl, now, read_jsonl, secrets, tg_link
+from _common import DRY, HOME, ROOT, STATE, append_jsonl, md_caption, now, plain_caption, read_jsonl, secrets, tg_link
 import draw
 
 SONGS_DIR = HOME / "media" / "songs"
@@ -200,7 +200,7 @@ def snippet(path_arg, length=25.0, start=None):
                              "snippet": rel(out), "of": e.get("path"), "seconds": round(length), "dry": DRY or None})
     print(f"сниппет готов: {rel(out)}, {length:.0f} с с {start:.0f}-й секунды")
 
-def tg(token, method, data, files):
+def tg(token, method, data, files, soft=False):
     boundary = uuid.uuid4().hex
     body = b""
     for k, v in data.items():
@@ -215,9 +215,27 @@ def tg(token, method, data, files):
         with urllib.request.urlopen(req, timeout=180) as r:
             return json.loads(r.read().decode())["result"]
     except urllib.error.HTTPError as e:
-        fail(f"Telegram ответил {e.code}: {json.loads(e.read().decode() or '{}').get('description', '')}")
+        desc = json.loads(e.read().decode() or '{}').get('description', '')
+        if soft:
+            raise RuntimeError(desc)
+        fail(f"Telegram ответил {e.code}: {desc}")
     except urllib.error.URLError as e:
         fail(f"нет связи с Telegram: {e.reason}")
+
+def tg_captioned(token, method, build, files):
+    """Подпись сначала с разметкой (Markdown → HTML); не разобрал её Telegram — тот же текст без разметки."""
+    try:
+        return tg(token, method, build(True), files, soft=True)
+    except RuntimeError as e:
+        if not re.search(r"(?i)pars|entit|tag", str(e)):
+            fail(f"Telegram ответил: {e}")
+        return tg(token, method, build(False), files)
+
+def with_caption(data, caption, rich):
+    cap = (caption or "").strip()[:1000]
+    if not cap:
+        return dict(data)
+    return {**data, "caption": md_caption(cap), "parse_mode": "HTML"} if rich else {**data, "caption": plain_caption(cap)}
 
 def cover_of(src):
     """Последняя обложка, назначенная этой песне; кусок берёт обложку своей песни."""
@@ -290,8 +308,6 @@ def send(where, target, path_arg, caption="", cover_arg="", cover=None):
     if not token or not channel:
         fail("нет ключей бота или канала — запусти tools/keys.py")
     data = {"title": title + (" (кусок)" if is_snippet else ""), "performer": "Лютик", "duration": int(seconds)}
-    if caption.strip():
-        data["caption"] = caption.strip()[:1000]
     files = {"audio": (src.name, src.read_bytes(), "audio/mpeg")}
     note = ""
     if cover:
@@ -305,7 +321,7 @@ def send(where, target, path_arg, caption="", cover_arg="", cover=None):
             cover, note = None, f", без обложки — не прицепилась: {str(err)[:120]}"
     label = f"🎵 «{title}»" + (" — кусок" if is_snippet else "") + (f"\n{caption.strip()}" if caption.strip() else "")
     if where == "channel":
-        msg = tg(token, "sendAudio", {**data, "chat_id": channel}, files)
+        msg = tg_captioned(token, "sendAudio", lambda rich: with_caption({**data, "chat_id": channel}, caption, rich), files)
         link = tg_link(msg)
         append_jsonl(POSTS, {"at": t.isoformat(timespec="seconds"), "text": label, "link": link,
                              "message_id": msg["message_id"], "format": "song", "seconds": int(seconds), "file": rel(src),
@@ -314,7 +330,7 @@ def send(where, target, path_arg, caption="", cover_arg="", cover=None):
         print(f"выпущено в канал {t:%d.%m %H:%M}: «{title}», {seconds:.0f} с{note} — {link}")
         return link
     elif where == "chat":
-        tg(token, "sendAudio", {**data, "chat_id": target}, files)
+        tg_captioned(token, "sendAudio", lambda rich: with_caption({**data, "chat_id": target}, caption, rich), files)
         append_jsonl(DIALOGS, {"at": t.isoformat(timespec="seconds"), "dir": "out", "kind": "dm", "chat": target,
                                "text": label, "voice": True})
         print(f"отправлено в личку {target}: «{title}», {seconds:.0f} с{note}")
@@ -324,8 +340,8 @@ def send(where, target, path_arg, caption="", cover_arg="", cover=None):
             headers={"Content-Type": "application/json"}), timeout=30).read().decode())["result"].get("linked_chat_id")
         if not group:
             fail("у канала нет группы обсуждения")
-        msg = tg(token, "sendAudio", {**data, "chat_id": group,
-                 "reply_parameters": json.dumps({"message_id": target, "allow_sending_without_reply": True})}, files)
+        msg = tg_captioned(token, "sendAudio", lambda rich: with_caption({**data, "chat_id": group, "reply_parameters":
+                           json.dumps({"message_id": target, "allow_sending_without_reply": True})}, caption, rich), files)
         post = next((d.get("post") for d in read_jsonl(DIALOGS)
                      if d.get("kind") == "comment" and d.get("message_id") == target), None)
         append_jsonl(DIALOGS, {"at": t.isoformat(timespec="seconds"), "dir": "out", "kind": "comment", "post": post,
@@ -370,10 +386,11 @@ def release(path_arg, caption, cover_arg="", start=None, length=None):
                "-c:v", "libx264", "-tune", "stillimage", "-preset", "veryfast", "-crf", 24,
                "-af", f"afade=t=in:st=0:d=0.6,afade=t=out:st={length - 2:.1f}:d=2", "-c:a", "aac", "-b:a", "192k",
                "-t", f"{length:.1f}", "-shortest", "-movflags", "+faststart", clip)
-        media = [{"type": "photo", "media": "attach://img", "caption": caption},
-                 {"type": "video", "media": "attach://clip", "thumbnail": "attach://thumb", "width": 1080, "height": 1080,
-                  "duration": int(round(length)), "supports_streaming": True}]
-        msgs = tg(token, "sendMediaGroup", {"chat_id": channel, "media": json.dumps(media, ensure_ascii=False)},
+        clip_item = {"type": "video", "media": "attach://clip", "thumbnail": "attach://thumb", "width": 1080,
+                     "height": 1080, "duration": int(round(length)), "supports_streaming": True}
+        album = lambda rich: {"chat_id": channel, "media": json.dumps(
+            [with_caption({"type": "photo", "media": "attach://img"}, caption, rich), clip_item], ensure_ascii=False)}
+        msgs = tg_captioned(token, "sendMediaGroup", album,
                   {"img": ("cover.jpg", img.read_bytes(), "image/jpeg"),
                    "clip": ("snippet.mp4", clip.read_bytes(), "video/mp4"),
                    "thumb": ("thumb.jpg", thumb.read_bytes(), "image/jpeg")})
