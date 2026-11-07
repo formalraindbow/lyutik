@@ -10,8 +10,8 @@
 
 make — песня через Mureka (шлюз NanoGPT, ключ LLM_API_KEY): текст в разметке [Verse] / [Chorus], звук — пара фраз
 по-английски (жанр, инструменты, темп). Голос — свой клон (MUREKA_VOCAL_ID в secrets.env, модель mureka/api/generate/song);
-без него — голос модели по умолчанию (Mureka V9.5). Генерация идёт минуту-две. Песня длиннее SONG_MAX_SECONDS (по умолчанию 90)
-обрезается с затуханием. За сутки — не больше SONG_DAILY_LIMIT песен (по умолчанию 3): каждая стоит денег.
+без него — голос модели по умолчанию (Mureka V9.5). Генерация идёт минуту-две. Песня длиннее SONG_MAX_SECONDS (по умолчанию 150)
+обрезается с затуханием — это крайняя мера: обрезка съедает концовку. За сутки — не больше SONG_DAILY_LIMIT песен (по умолчанию 3): каждая стоит денег.
 С --cover обложка рисуется через draw.generate (anymodel, модель COVER_MODEL), пока поётся песня; не вышла — песня готова.
 Песни лежат в agent/lyutik/media/songs/, обложки — в media/covers/, список — state/songs.jsonl.
 snippet — кусок песни, по умолчанию 25 секунд с трети записи, с мягким входом и затуханием; ложится рядом с песней.
@@ -19,9 +19,8 @@ channel / chat / comment — отправить песню или сниппет
 Обложка — из --cover (путь к картинке; любой другой текст — описание, обложка рисуется), иначе последняя, назначенная
 песне (кусок берёт обложку своей песни). Она уходит дважды: внутри mp3 (ID3, 800 px — видна у скачавших) и превью
 для Telegram (jpeg до 320 px и 200 КБ, так требует sendAudio).
-release — релиз в канал: альбом из обложки картинкой и видео-сниппета (обложка в кадре и кусок песни, 25 с с трети
-записи) с подписью, следом — вся песня треком с обложкой. Фото и трек в один альбом Telegram не кладёт: альбом
-смешивает только фото и видео, поэтому сниппет — видео.
+release — релиз в канал: видео-сниппет (обложка в кадре и кусок песни, 25 с с трети записи) с подписью,
+следом — вся песня треком с обложкой.
 """
 import json, re, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request, uuid
 from pathlib import Path
@@ -169,7 +168,7 @@ def make(title, sound, lyrics, cover=""):
         fail(f"песня не готова за 7 минут; заказ {run}")
     full = out.with_suffix(".full.mp3")
     full.write_bytes(raw)
-    seconds, cut = seconds_of(full), setting("SONG_MAX_SECONDS", 90)
+    seconds, cut = seconds_of(full), setting("SONG_MAX_SECONDS", 150)   # 16 строк Mureka поёт за 85–105 с, с концовкой
     if seconds > cut:
         ffmpeg("-i", full, "-t", cut, "-af", f"afade=t=out:st={cut - 4}:d=4", "-b:a", "192k", out)
         seconds = cut
@@ -356,13 +355,13 @@ def send(where, target, path_arg, caption="", cover_arg="", cover=None):
 
 
 def release(path_arg, caption, cover_arg="", start=None, length=None):
-    """Релиз: альбом «обложка + видео-сниппет» с подписью, следом вся песня треком с обложкой."""
+    """Релиз: видео-сниппет (обложка в кадре, кусок песни) с подписью, следом вся песня треком с обложкой."""
     src = local(path_arg)
     if ".snippet_" in src.name:
         fail("релиз собирается из целой песни — сниппет нарежется сам")
     caption = (caption or "").strip()
     if not caption:
-        fail("нужна подпись под альбомом")
+        fail("нужна подпись под сниппетом")
     if len(caption) > 1024:
         fail(f"подпись {len(caption)} знаков — Telegram берёт до 1024")
     title = entry_for(src).get("title") or src.stem
@@ -384,28 +383,24 @@ def release(path_arg, caption, cover_arg="", start=None, length=None):
     square = "scale={0}:{0}:force_original_aspect_ratio=increase,crop={0}:{0}"
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        img, thumb, clip = tmp / "cover.jpg", tmp / "thumb.jpg", tmp / "snippet.mp4"
-        ffmpeg("-i", cover, "-vf", square.format(1280), "-q:v", 2, img)
+        thumb, clip = tmp / "thumb.jpg", tmp / "snippet.mp4"
         ffmpeg("-i", cover, "-vf", square.format(320), "-q:v", 4, thumb)
         ffmpeg("-loop", 1, "-framerate", 25, "-i", cover, "-ss", f"{start:.1f}", "-t", f"{length:.1f}", "-i", src,
                "-map", "0:v", "-map", "1:a", "-vf", square.format(1080) + ",format=yuv420p",
                "-c:v", "libx264", "-tune", "stillimage", "-preset", "veryfast", "-crf", 24,
                "-af", f"afade=t=in:st=0:d=0.6,afade=t=out:st={length - 2:.1f}:d=2", "-c:a", "aac", "-b:a", "192k",
                "-t", f"{length:.1f}", "-shortest", "-movflags", "+faststart", clip)
-        clip_item = {"type": "video", "media": "attach://clip", "thumbnail": "attach://thumb", "width": 1080,
-                     "height": 1080, "duration": int(round(length)), "supports_streaming": True}
-        album = lambda rich: {"chat_id": channel, "media": json.dumps(
-            [with_caption({"type": "photo", "media": "attach://img"}, caption, rich), clip_item], ensure_ascii=False)}
-        msgs = tg_captioned(token, "sendMediaGroup", album,
-                  {"img": ("cover.jpg", img.read_bytes(), "image/jpeg"),
-                   "clip": ("snippet.mp4", clip.read_bytes(), "video/mp4"),
-                   "thumb": ("thumb.jpg", thumb.read_bytes(), "image/jpeg")})
+        video = {"chat_id": channel, "video": "attach://clip", "thumbnail": "attach://thumb", "width": 1080,
+                 "height": 1080, "duration": int(round(length)), "supports_streaming": "true"}
+        msg = tg_captioned(token, "sendVideo", lambda rich: with_caption(video, caption, rich),
+                           {"clip": ("snippet.mp4", clip.read_bytes(), "video/mp4"),
+                            "thumb": ("thumb.jpg", thumb.read_bytes(), "image/jpeg")})
     t = now()
-    album = tg_link(msgs[0])
-    append_jsonl(POSTS, {"at": t.isoformat(timespec="seconds"), "text": f"🎵 «{title}» — релиз\n{caption}", "link": album,
-                         "message_id": msgs[0]["message_id"], "format": "release", "file": rel(src), "cover": rel(cover),
+    link = tg_link(msg)
+    append_jsonl(POSTS, {"at": t.isoformat(timespec="seconds"), "text": f"🎵 «{title}» — релиз\n{caption}", "link": link,
+                         "message_id": msg["message_id"], "format": "release", "file": rel(src), "cover": rel(cover),
                          "snippet": [round(start), round(length)]})
-    print(f"релиз «{title}» в канале {t:%d.%m %H:%M}: обложка и сниппет {length:.0f} с с {start:.0f}-й секунды — {album}")
+    print(f"релиз «{title}» в канале {t:%d.%m %H:%M}: видео-сниппет {length:.0f} с с {start:.0f}-й секунды — {link}")
     send("channel", None, path_arg, cover=cover)
 
 
