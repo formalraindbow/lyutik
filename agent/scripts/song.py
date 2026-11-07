@@ -7,6 +7,7 @@
     song.py chat <номер чата> <путь> ["<подпись>"] [--cover <путь к картинке>]
     song.py comment <номер комментария> <путь> ["<подпись>"] [--cover <путь к картинке>]
     song.py release <путь к песне> "<подпись>" [--cover <путь или описание>] [--start с] [--seconds с]
+    song.py lyrics <номер сообщения в обсуждении> <путь к песне>
 
 make — песня через Mureka (шлюз NanoGPT, ключ LLM_API_KEY): текст в разметке [Verse] / [Chorus], звук — пара фраз
 по-английски (жанр, инструменты, темп). Голос — свой клон (MUREKA_VOCAL_ID в secrets.env, модель mureka/api/generate/song);
@@ -20,9 +21,11 @@ channel / chat / comment — отправить песню или сниппет
 песне (кусок берёт обложку своей песни). Она уходит дважды: внутри mp3 (ID3, 800 px — видна у скачавших) и превью
 для Telegram (jpeg до 320 px и 200 КБ, так требует sendAudio).
 release — релиз в канал: видео-сниппет (обложка в кадре и кусок песни, 25 с с трети записи) с подписью,
-следом — вся песня треком с обложкой.
+следом — вся песня треком с обложкой. Текст песни уходит комментарием под релиз сам: release оставляет отметку
+в state/lyrics_pending.json, цикл (run.py) видит пост в обсуждении и зовёт lyrics.
+lyrics — текст песни из songs.jsonl комментарием под постом: ответ на его копию в группе обсуждения.
 """
-import json, re, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request, uuid
+import html, json, re, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request, uuid
 from pathlib import Path
 from _common import DRY, HOME, ROOT, STATE, append_jsonl, md_caption, now, plain_caption, read_jsonl, secrets, tg_link
 import draw
@@ -33,6 +36,7 @@ COVER_FRAME = "Обложка музыкального трека, квадра�
 COVER_MAX = 1500
 COVER_MODEL = "anymedia/seedream-5-pro"   # замер 08.11: ближе всех к фото; gpt-image глянцевый, nano-banana-pro путал лютню с гитарой
 SONGS, POSTS, DIALOGS = STATE / "songs.jsonl", STATE / "posts.jsonl", STATE / "dialogs.jsonl"
+LYRICS_PENDING = STATE / "lyrics_pending.json"     # пост канала → песня: текст повиснет комментарием, когда пост дойдёт до обсуждения
 MODEL, COST = "mureka-ai/mureka-v9.5/generate-song", 0.225          # без своего голоса
 VOICE_MODEL, VOICE_COST = "mureka/api/generate/song", 0.15           # со своим голосом: vocal_id видит только эта обёртка
 API = "https://api.nano-gpt.com/api"
@@ -294,7 +298,60 @@ def resolve_cover(arg, src, title):
                              "cover": rel(p), **({"cover_prompt": prompt} if prompt else {})})
     return p
 
-def send(where, target, path_arg, caption="", cover_arg="", cover=None):
+def lyrics_later(post_id, src):
+    try:
+        pend = json.loads(LYRICS_PENDING.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pend = {}
+    pend[str(post_id)] = rel(src)
+    LYRICS_PENDING.write_text(json.dumps(pend, ensure_ascii=False), encoding="utf-8")
+
+def lyrics_html(title, lyrics):
+    """Текст для людей: без разметки [Verse]/[Chorus], куплеты через пустую строку, название жирным."""
+    blocks, cur = [], []
+    for line in lyrics.splitlines():
+        if not line.strip() or re.match(r"^\s*\[.*\]\s*$", line):
+            if cur:
+                blocks.append(cur)
+                cur = []
+            continue
+        cur.append(html.escape(line.strip()))
+    if cur:
+        blocks.append(cur)
+    return f"<b>«{html.escape(title)}»</b>\n\n" + "\n\n".join("\n".join(b) for b in blocks)
+
+def discussion(token, channel):
+    group = json.loads(urllib.request.urlopen(urllib.request.Request(
+        f"https://api.telegram.org/bot{token}/getChat", data=json.dumps({"chat_id": channel}).encode(),
+        headers={"Content-Type": "application/json"}), timeout=30).read().decode())["result"].get("linked_chat_id")
+    if not group:
+        fail("у канала нет группы обсуждения")
+    return group
+
+def lyrics_comment(reply_to, path_arg):
+    """Текст песни — комментарием под постом: ответ на его копию в группе обсуждения."""
+    src = local(path_arg)
+    e = entry_for(src)
+    if e.get("of"):
+        e = next((x for x in reversed(read_jsonl(SONGS)) if x.get("path") == e["of"] and x.get("lyrics")), e)
+    if not e.get("lyrics"):
+        fail(f"у {src.name} нет текста в songs.jsonl")
+    title = e.get("title") or src.stem
+    if DRY:
+        print(f"[сухой прогон] текст «{title}» под сообщением {reply_to} не отправлен")
+        return
+    s = secrets()
+    token, channel = s.get("TELEGRAM_BOT_TOKEN"), s.get("TELEGRAM_CHANNEL_ID")
+    group = discussion(token, channel)
+    msg = tg(token, "sendMessage", {"chat_id": group, "text": lyrics_html(title, e["lyrics"]), "parse_mode": "HTML",
+                                    "reply_parameters": json.dumps({"message_id": int(reply_to), "allow_sending_without_reply": True})}, {})
+    post = next((d.get("post") for d in read_jsonl(DIALOGS) if d.get("chat") == group and d.get("message_id") == int(reply_to)), None)
+    append_jsonl(DIALOGS, {"at": now().isoformat(timespec="seconds"), "dir": "out", "kind": "comment", "post": post,
+                           "chat": group, "reply_to": int(reply_to), "message_id": msg["message_id"],
+                           "text": f"текст песни «{title}» в комментариях"})
+    print(f"текст «{title}» — в комментариях, сообщение {msg['message_id']}")
+
+def send(where, target, path_arg, caption="", cover_arg="", cover=None, lyrics=True):
     src = local(path_arg)
     e = entry_for(src)
     title = e.get("title") or src.stem
@@ -330,6 +387,8 @@ def send(where, target, path_arg, caption="", cover_arg="", cover=None):
                              "message_id": msg["message_id"], "format": "song", "seconds": int(seconds), "file": rel(src),
                              "cover": rel(cover) if cover else None})
         append_jsonl(SONGS, {"at": t.isoformat(timespec="seconds"), "title": title, "posted": link, "file": rel(src)})
+        if lyrics and not is_snippet:
+            lyrics_later(msg["message_id"], src)
         print(f"выпущено в канал {t:%d.%m %H:%M}: «{title}», {seconds:.0f} с{note} — {link}")
         return link
     elif where == "chat":
@@ -398,8 +457,10 @@ def release(path_arg, caption, cover_arg="", start=None, length=None):
     append_jsonl(POSTS, {"at": t.isoformat(timespec="seconds"), "text": f"🎵 «{title}» — релиз\n{caption}", "link": link,
                          "message_id": msg["message_id"], "format": "release", "file": rel(src), "cover": rel(cover),
                          "snippet": [round(start), round(length)]})
-    print(f"релиз «{title}» в канале {t:%d.%m %H:%M}: видео-сниппет {length:.0f} с с {start:.0f}-й секунды — {link}")
-    send("channel", None, path_arg, cover=cover)
+    lyrics_later(msg["message_id"], src)
+    print(f"релиз «{title}» в канале {t:%d.%m %H:%M}: видео-сниппет {length:.0f} с с {start:.0f}-й секунды — {link}; "
+          f"текст песни повиснет в комментариях сам")
+    send("channel", None, path_arg, cover=cover, lyrics=False)
 
 
 def main():
@@ -418,6 +479,8 @@ def main():
         snippet(a[1], a[2] if len(a) > 2 and a[2] else 25, a[3] if len(a) > 3 else None)
     elif cmd == "channel" and len(a) >= 2:
         send("channel", None, a[1], a[2] if len(a) > 2 else "", cover)
+    elif cmd == "lyrics" and len(a) >= 3:
+        lyrics_comment(a[1], a[2])
     elif cmd == "release" and len(a) >= 3:
         release(a[1], a[2], cover, flags.get("--start") or None, flags.get("--seconds") or None)
     elif cmd in ("chat", "comment") and len(a) >= 3:

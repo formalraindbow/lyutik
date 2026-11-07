@@ -41,6 +41,7 @@ EVENTS = LOGS / "events.jsonl"       # полный журнал для пане
 DIALOGS = LOCKED / "dialogs.jsonl"   # личка: что пришло и что он ответил
 TG_OFFSET = LOCKED / "tg_offset.txt" # до какого обновления Telegram уже прочитано
 THREADS = LOCKED / "threads.json"    # ветка комментариев в группе обсуждения → номер поста в канале
+LYRICS_PENDING = LOCKED / "lyrics_pending.json"   # пост с песней → её файл: текст уйдёт комментарием, когда пост дойдёт до обсуждения
 PENDING = LOCKED / "inbox_pending.jsonl"  # подтянутое заранее (старые комментарии): отдаётся при ближайшем опросе
 POLLS = LOCKED / "polls.json"        # его опросы: голоса обновляет цикл по событиям Telegram
 MEDIA_IN = HOME / "media" / "in"     # фото от людей из лички и комментариев; смотреть — инструментом look
@@ -134,7 +135,7 @@ TOOLS = [
        cover=("string", "другая обложка: путь к картинке или её описание — тогда нарисуется; останется за песней"),
        chat=("integer", "номер чата, если в личку"), comment=("integer", "номер комментария, если в ветку")),
     fn("release", "Выпустить песню в канал релизом: видео-сниппет (обложка в кадре, кусок песни) с твоей подписью; "
-       "следом вся песня треком с обложкой. Такой пост пересылают в другие каналы.",
+       "следом вся песня треком с обложкой, а текст песни сам уходит в комментарии. Такой пост пересылают в другие каналы.",
        optional=("cover", "start", "seconds"),
        path=("string", "путь к целой песне из ответа song"), caption=("string", "подпись под сниппетом, до 1024 знаков"),
        cover=("string", "обложка: путь к картинке или её описание — тогда нарисуется; без него — обложка песни"),
@@ -700,6 +701,19 @@ class Log:
 
 
 # ── сессия ────────────────────────────────────────────────────────────────────
+def lyrics_for(post, group_msg):
+    """Текст песни — комментарием под её релизом, как только пост появился в группе обсуждения."""
+    try:
+        pend = json.loads(LYRICS_PENDING.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    path = pend.pop(str(post), None)
+    if not path:
+        return
+    LYRICS_PENDING.write_text(json.dumps(pend, ensure_ascii=False), encoding="utf-8")
+    emit("lyrics", post=post, result=script("song", "lyrics", group_msg, path, dry=False, timeout=60)[:200])
+
+
 class Ears:
     """Личка и комментарии под постами: будят его во сне и доходят посреди сессии."""
     def __init__(self, token, channel=None):
@@ -793,6 +807,7 @@ class Ears:
         if m.get("is_automatic_forward"):                    # сам пост, продублированный в обсуждение
             post = (m.get("forward_origin") or {}).get("message_id") or m.get("forward_from_message_id")
             threads[str(m["message_id"])] = post
+            lyrics_for(post, m["message_id"])
             return None
         if (m.get("from") or {}).get("id") == self.bot_id:  # его собственный ответ
             return None
