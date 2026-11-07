@@ -39,6 +39,9 @@ VOICE_MODEL, VOICE_COST = "mureka/api/generate/song", 0.15           # со св
 API = "https://api.nano-gpt.com/api"
 UA = "Mozilla/5.0 (Macintosh) lyutik/1.0"
 MAX_LINES = 16
+# Лютик — независимый исполнитель (ядро, п. 12): один голос, без подпевок, хора и «завываний»; дописывается к звуку
+SOLO = ("solo male vocal, one voice only, close-mic dry vocal, plain direct delivery, "
+        "no backing vocals, no choir, no harmonies, no vocal runs, sparse arrangement")
 
 
 def fail(msg):
@@ -108,6 +111,8 @@ def nano(method, url, body=None):
 
 def make(title, sound, lyrics, cover=""):
     title, sound, lyrics, cover = title.strip(), sound.strip(), lyrics.strip(), (cover or "").strip()
+    lyrics = "\n".join(c for l in lyrics.splitlines()            # в скобках модель поёт вторым голосом — он поёт один
+                       for c in [re.sub(r"[ \t]*\([^)\n]*\)", "", l).rstrip()] if c.strip() or not l.strip())
     if not title or not sound or not lyrics:
         fail("нужны название, звук и текст")
     sung = [l for l in lyrics.splitlines() if l.strip() and not re.match(r"^\s*\[.*\]\s*$", l)]
@@ -141,7 +146,8 @@ def make(title, sound, lyrics, cover=""):
         painter.start()
     vocal = secrets().get("MUREKA_VOCAL_ID")
     model, cost = (VOICE_MODEL, VOICE_COST) if vocal else (MODEL, COST)
-    body = {"model": model, "input": sound, "prompt": sound, "lyrics": lyrics, "response_format": "mp3"}
+    style = f"{sound.rstrip(' .')}. {SOLO}"
+    body = {"model": model, "input": style, "prompt": style, "lyrics": lyrics, "response_format": "mp3"}
     if vocal:
         body["vocal_id"] = vocal
     job = nano("POST", f"{API}/v1/audio/speech", body)
@@ -175,7 +181,7 @@ def make(title, sound, lyrics, cover=""):
             art["error"] = "художник не успел"
     entry = {"at": t.isoformat(timespec="seconds"), "title": title, "sound": sound, "lyrics": lyrics,
              "path": rel(out), "seconds": round(seconds), "cost": job.get("cost", cost), "run": run,
-             "voice": vocal or "по умолчанию"}
+             "voice": vocal or "по умолчанию", "style": style}
     if art["path"]:
         entry.update(cover=rel(art["path"]), cover_prompt=cover)
     append_jsonl(SONGS, entry)
