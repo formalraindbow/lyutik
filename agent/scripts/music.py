@@ -4,11 +4,15 @@
     music.py search "<запрос>" [yandex|soundcloud|youtube]
     music.py get <ссылка>
     music.py library
+    music.py chart [сколько]
+    music.py lyrics <yandex:номер или ссылка на трек Яндекс Музыки>
 
 search — до восьми находок: название, исполнитель или канал, длина, ссылка. Где искать по умолчанию — MUSIC_DEFAULT
 (на сервере yandex: Яндекс Музыка по подписке, токен YANDEX_MUSIC_TOKEN; YouTube из дата-центра скачивать не даёт).
 get — звук по ссылке в agent/lyutik/media/library/ (до 12 минут), список — state/library.jsonl. Послушать — listen с путём.
 library — что уже лежит в библиотеке.
+chart — чарт Яндекс Музыки: что слушают прямо сейчас, по умолчанию 20 треков.
+lyrics — текст песни с Яндекс Музыки, дословно: цитировать можно без ошибок слуха.
 Поиск и скачивание идут через yt-dlp из окружения слуха (EARS_PYTHON в secrets.env).
 """
 import json, os, re, subprocess, sys
@@ -123,6 +127,26 @@ def get(url):
                        "path": rel, "seconds": int(float(dur)) if dur.replace(".", "").isdigit() else None})
     print(f"в библиотеке: {rel} — «{title}», {ch}, {clock(dur)}. Послушать — listen с этим путём.")
 
+def chart(n=20):
+    rows = yandex("chart", str(n))
+    if not rows:
+        fail("Яндекс Музыка не отдала чарт")
+    print("чарт Яндекс Музыки — что слушают прямо сейчас:")
+    for pos, tid, title, artists, sec in rows:
+        print(f"[{pos}] {title} — {artists} · {clock(sec)}\n    yandex:{tid}")
+
+def lyrics(ref):
+    m = re.match(r"^yandex:(\d+(?::\d+)?)$", ref) or re.search(r"music\.yandex\.\w+/(?:album/\d+/)?track/(\d+)", ref)
+    if not m:
+        fail("текст есть у треков Яндекс Музыки: yandex:<номер> из music_search или music_chart")
+    r = subprocess.run([ears_python(), str(Path(__file__).with_name("_yandex.py")), "lyrics", m.group(1)],
+                       capture_output=True, text=True, timeout=120)
+    if r.returncode:
+        fail(f"Яндекс Музыка: {(r.stderr or r.stdout).strip()[-240:]}")
+    head, _, text = r.stdout.partition("\n")
+    title, artists = (head.split("\t") + ["?", "?"])[:2]
+    print(f"«{title}» — {artists}, текст с Яндекс Музыки:\n\n{text.strip()}")
+
 def library():
     rows = [x for x in read_jsonl(LIB) if (ROOT / x.get("path", "")).exists()]
     if not rows:
@@ -141,6 +165,10 @@ def main():
         get(a[1].strip())
     elif a[:1] == ["library"]:
         library()
+    elif a[:1] == ["chart"]:
+        chart(a[1] if len(a) > 1 and a[1].isdigit() else 20)
+    elif a[:1] == ["lyrics"] and len(a) >= 2:
+        lyrics(a[1].strip())
     else:
         print(__doc__); sys.exit(1)
 

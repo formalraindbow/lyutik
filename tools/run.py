@@ -143,6 +143,10 @@ TOOLS = [
     fn("music_get", "Скачать трек в свою библиотеку (до 12 минут). Дальше — listen с путём из ответа.",
        url=("string", "ссылка или yandex:<номер> из music_search")),
     fn("music_library", "Что уже лежит в твоей библиотеке музыки."),
+    fn("music_chart", "Что слушают в этом мире прямо сейчас: чарт Яндекс Музыки с позициями, длиной и номерами yandex:<id>.",
+       optional=("count",), count=("integer", "сколько треков, до 50; по умолчанию 20")),
+    fn("music_lyrics", "Текст чужой песни с Яндекс Музыки, дословно — строчки можно цитировать без ошибок слуха.",
+       track=("string", "yandex:<номер> из music_chart или music_search")),
     fn("remember", "Дописать датированную строку в заметку memory/entities/<name>.md; заметки нет — она появится.",
        name=("string", "имя человека, места, вещи или события"), text=("string", "что запомнить, со ссылками [[имя]]")),
     fn("canon_search", "Найти в книгах о мире, откуда ты пришёл, абзацы, где есть все слова. Слова — начало формы: «лютик» найдёт «Лютика».",
@@ -406,6 +410,10 @@ def call_tool(name, args, dry):
             return script("music", "get", args["url"], dry=dry, timeout=360)
         if name == "music_library":
             return script("music", "library", dry=dry)
+        if name == "music_chart":
+            return script("music", "chart", args.get("count") or 20, dry=dry, timeout=120)
+        if name == "music_lyrics":
+            return script("music", "lyrics", args["track"], dry=dry, timeout=120)
         if name == "remember":
             return script("remember", args["name"], args["text"], dry=dry)
         if name == "canon_search":
