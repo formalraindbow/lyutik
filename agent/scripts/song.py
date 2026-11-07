@@ -271,13 +271,11 @@ def resolve_cover(arg, src, title):
     if not arg:
         return cover_of(src)
     song_key = entry_for(src).get("of") or rel(src)
-    p = Path(arg)
-    p = p if p.is_absolute() else ROOT / p
-    if "\n" not in arg and len(arg) < 300 and (p.exists() or "/" in arg):
+    if "\n" not in arg and re.search(r"\.(png|jpe?g|webp)$", arg, re.I):   # путь к картинке; всё прочее — описание
+        p = Path(arg)
+        p = p if p.is_absolute() else ROOT / p
         if not p.exists():
             fail(f"нет файла {arg}")
-        if p.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
-            fail("обложка — картинка png, jpg или webp")
         prompt = None
     else:
         if len(arg) > COVER_MAX:

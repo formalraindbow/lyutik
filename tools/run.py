@@ -60,7 +60,8 @@ TOOLS = [
        path=("string", "путь от корня"), content=("string", "полный новый текст файла")),
     fn("post", "Опубликовать пост в своём канале «Полвека поэзии». Текст — Markdown: заголовки, списки, таблицы, цитаты, "
        "**жирный**, и свёрнутые секции <details><summary>заголовок</summary>текст</details> — в ленте они закрыты и "
-       "раскрываются по тапу. До 32 768 знаков. Возвращает ссылку на пост или причину отказа.",
+       "раскрываются по тапу. До 32 768 знаков. Большой пост, от 900 знаков, — разбор с оформлением: заголовки, цитаты "
+       "блоком, таблица, свёрнутые секции; сплошным текстом его не выпустят. Возвращает ссылку на пост или причину отказа.",
        text=("string", "текст поста в Markdown")),
     fn("poll", "Опрос в своём канале: вопрос и 2–12 вариантов, голосуют подписчики. Как проголосовали — polls.",
        question=("string", "вопрос, до 300 знаков"), options=("string", "варианты через «|», каждый до 100 знаков")),
@@ -252,8 +253,9 @@ def recent_from(chat, hours=6):
 ROAST_GOOD_EVERY = 8          # вкус признаёт песню примерно раз на столько треков; решение по треку постоянно
 ROAST_TASTE = ("ревность громче вкуса — хвалить здесь нечего, ни строчки",
                "вкус взял слово — если песня и правда хороша, эго промолчит")
-ROAST_FORMS = ("одной фразой", "цитата и приговор, коротко", "разнос по куплетам", "письмо этому артисту",
-               "тост в кабаке — за эту песню", "пересказ песни так, как её услышал бы трактирщик")
+ROAST_FORMS = ("одной фразой", "цитата и приговор, коротко", "тост в кабаке — за эту песню, коротко",
+               "разбор с оформлением: заголовок, улики цитатами блоком, таблица «строчка — приговор», итог одной строкой",
+               "суд над несколькими треками разом: таблица дел с вердиктами, улики цитатами блоком, подробности свёрнуты")
 
 def roast_hint(track, good=None):
     """Кулисы к тексту чужой песни: вкус к ней (по номеру трека, один и тот же навсегда) и форма поста (бросок)."""
@@ -262,6 +264,20 @@ def roast_hint(track, good=None):
         good = int(hashlib.md5(tid.encode()).hexdigest(), 16) % ROAST_GOOD_EVERY == 0
     return (f"\n\n(кулисы, видишь только ты: {ROAST_TASTE[bool(good)]}. Если пишешь о ней — форма: "
             f"{random.choice(ROAST_FORMS)}; без эмодзи и без подписи.)")
+
+BIG_POST = 900   # знаков: дальше пост — разбор с оформлением (твоё решение 8.11: «полотно мыслей — другой жанр»)
+
+def shapeless(text):
+    """Большой пост сплошным текстом: меньше двух видов оформления из заголовков, цитат блоком, таблиц, свёрток, списков."""
+    if len(text) < BIG_POST:
+        return False
+    kinds = (r"^#{1,6}\s", r"^>", r"^\|.*\|\s*$", r"<details>", r"^\s*(?:[-*•]|\d+\.)\s")
+    return sum(bool(re.search(k, text, re.M)) for k in kinds) < 2
+
+def long_caption(caption):
+    """Подпись к песне — одна строка (ядро): до двух предложений, без переносов, до 220 знаков."""
+    c = (caption or "").strip()
+    return bool(c) and ("\n" in c or len(c) > 220 or len([x for x in re.split(r"(?<=[.!?…])\s+", c) if x.strip()]) > 2)
 
 def roll_move(text, chat, m):
     w = {"flip": 4.0, "snap": 1.0, "show": 1.0, "cut": 0.8, "warm": 0.5, "mute": 0.4, "price": 0.0}
@@ -347,7 +363,8 @@ def call_tool(name, args, dry):
             p.write_text(content.rstrip() + "\n", encoding="utf-8")
             return f"записано: {p.relative_to(ROOT)}, {len(content)} знаков"
         if name == "post":
-            problem = guard(args["text"])
+            problem = guard(args["text"]) or ("большой пост сплошным текстом — оформи разбором: заголовок, цитаты блоком (>), "
+                                              "таблица или свёрнутые секции" if shapeless(args["text"]) else "")
             if problem:
                 return f"не опубликовано: {problem}"
             return script("post", args["text"], dry=dry)
@@ -410,12 +427,14 @@ def call_tool(name, args, dry):
         if name == "song_snippet":
             return script("song", "snippet", args["path"], args.get("seconds") or "", args.get("start") or "", dry=dry)
         if name == "release":
-            problem = guard(args["caption"])
+            problem = guard(args["caption"]) or ("подпись к песне — одна строка от тебя, сожми" if long_caption(args["caption"]) else "")
             if problem:
                 return f"не опубликовано: {problem}"
             extra = [x for k in ("cover", "start", "seconds") if args.get(k) not in (None, "")
                      for x in (f"--{k}", args[k])]
             return script("song", "release", args["path"], args["caption"], *extra, dry=dry, timeout=420)
+        if name == "post_song" and long_caption(args.get("caption")):
+            return "не опубликовано: подпись к песне — одна строка от тебя, сожми"
         if name == "post_song":
             cover = ("--cover", args["cover"]) if args.get("cover") else ()
             if args.get("comment"):
