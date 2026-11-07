@@ -986,7 +986,7 @@ def main():
 
     operator, wake, pending = a.operator, "первое пробуждение после запуска", []
     emit("start", pid=os.getpid(), dry=a.dry)
-    if not (a.dry or a.once):      # мак не засыпает, пока жив цикл; от сети питания, с открытой крышкой
+    if not (a.dry or a.once) and Path("/usr/bin/caffeinate").exists():   # на маке: не засыпать, пока жив цикл
         subprocess.Popen(["/usr/bin/caffeinate", "-i", "-s", "-w", str(os.getpid())],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
