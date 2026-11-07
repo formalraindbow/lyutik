@@ -87,7 +87,8 @@ python3 tools/panel.py       # http://127.0.0.1:8787
 Письмо персонажу — файл `agent/lyutik/state/operator.txt` (будит сразу) или `operator.at_wake.txt` (дождётся
 пробуждения). Лютня и голос — окружение с `numpy` (`VOICE_PYTHON` в secrets.env), `ffmpeg` и ключ OpenRouter;
 без ключа голос откатывается на Edge TTS или vosk-tts. Уши — второе окружение (`EARS_PYTHON`: librosa,
-faster-whisper, yt-dlp) и ключ anymodel для слуха модели; он же нужен рисованию. Все ключи вводит `keys.py`.
+faster-whisper, yt-dlp, `av==15.1.0`: faster-whisper 1.2.1 передаёт `av.open` аргумент `metadata_errors`, av 19 его
+не знает — слова не разбираются) и ключ anymodel для слуха модели; он же нужен рисованию. Все ключи вводит `keys.py`.
 
 ## Что было
 

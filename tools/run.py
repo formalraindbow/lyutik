@@ -632,11 +632,11 @@ class Log:
 class Ears:
     """Личка и комментарии под постами: будят его во сне и доходят посреди сессии."""
     def __init__(self, token, channel=None):
-        self.token, self.group, self.bot_id, self.username = token, None, None, None
+        self.token, self.group, self.bot_id, self.username, self.channel_id = token, None, None, None, None
         try:
             self.bot_id = self.api("getMe")["id"]
             ch = self.api("getChat", chat_id=channel) if channel else {}
-            self.group, self.username = ch.get("linked_chat_id"), ch.get("username")
+            self.group, self.username, self.channel_id = ch.get("linked_chat_id"), ch.get("username"), ch.get("id")
         except Exception:
             pass
 
@@ -731,12 +731,19 @@ class Ears:
             threads[str(rt["message_id"])] = post
         else:
             post = threads.get(str(m.get("message_thread_id")))
-        fr = m.get("from") or {}
+        fr, sc = m.get("from") or {}, m.get("sender_chat") or {}
+        if sc:      # от имени канала или анонимным админом: в from тогда заглушка Telegram (@Channel_Bot, @GroupAnonymousBot)
+            title = sc.get("title") or sc.get("username") or "без названия"
+            name = (f"твой канал «{title}» — пишет кто-то из его админов" if sc.get("id") == self.channel_id else
+                    f"канал «{title}»" if sc.get("type") == "channel" else f"аноним от имени «{title}»")
+            uid, uname = sc.get("id"), sc.get("username") or ""
+        else:
+            name = " ".join(x for x in (fr.get("first_name"), fr.get("last_name")) if x) or fr.get("username") or "кто-то"
+            uid, uname = fr.get("id"), fr.get("username") or ""
         return {"at": datetime.datetime.now().isoformat(timespec="seconds"), "dir": "in", "kind": "comment",
-                "chat": m["chat"]["id"], "message_id": m["message_id"], "post": post, "user_id": fr.get("id"),
+                "chat": m["chat"]["id"], "message_id": m["message_id"], "post": post, "user_id": uid,
                 "post_link": f"https://t.me/{self.username}/{post}" if post and self.username else "",
-                "name": " ".join(x for x in (fr.get("first_name"), fr.get("last_name")) if x) or fr.get("username") or "кто-то",
-                "username": fr.get("username") or "", "text": self.said(m) or "[без текста]",
+                "name": name, "username": uname, "text": self.said(m) or "[без текста]",
                 "reply_to": rt.get("message_id") if rt and not rt.get("is_automatic_forward") else None}
 
     def poll(self, timeout=0):
