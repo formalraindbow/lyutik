@@ -283,7 +283,8 @@ FOREIGN = re.compile(r"[぀-ヿ一-鿿가-힯]")
 def guard(text, kind=None, key=None):
     """Сторож перед выходом к людям. Пусто — можно отправлять, иначе — что поправить."""
     t = re.sub(r"https?://\S+|@\w+", "", text)
-    if FOREIGN.search(t) or len(re.findall(r"\b[A-Za-z]{4,}\b", t)) > max(3, len(t.split()) // 6):
+    own = re.sub(r"«[^»]*»|“[^”]*”|\"[^\"\n]*\"|^\s*>.*$", "", t, flags=re.M)   # цитаты чужих песен — их право на чужой язык
+    if FOREIGN.search(t) or len(re.findall(r"\b[A-Za-z]{4,}\b", own)) > max(3, len(own.split()) // 6):
         return "в тексте посторонний язык — перепиши по-русски"
     if POLITICS.search(t):
         return "политика и война — болото, перепиши о своём"
