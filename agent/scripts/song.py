@@ -328,12 +328,52 @@ def discussion(token, channel):
         fail("у канала нет группы обсуждения")
     return group
 
-def lyrics_comment(reply_to, path_arg):
-    """Текст песни — комментарием под постом: ответ на его копию в группе обсуждения."""
-    src = local(path_arg)
+def song_entry(src):
+    """Запись песни с текстом; у куска — запись его песни."""
     e = entry_for(src)
     if e.get("of"):
         e = next((x for x in reversed(read_jsonl(SONGS)) if x.get("path") == e["of"] and x.get("lyrics")), e)
+    return e
+
+def ears_python():
+    return secrets().get("EARS_PYTHON") or str(Path.home() / ".local" / "share" / "lyutik" / "ears" / "bin" / "python")
+
+def snippet_video(src, cover, start, length, title, tmp):
+    """Видео-сниппет: обложка в такт и спетые строки субтитрами (_align.py + _video.py в окружении слуха).
+    Не вышло — статичная обложка с тем же куском, чтобы релиз не падал."""
+    clip, lines, lyr = tmp / "snippet.mp4", tmp / "lines.json", song_entry(src).get("lyrics") or ""
+    here = Path(__file__).with_name
+    if lyr:
+        (tmp / "lyrics.txt").write_text(lyr, encoding="utf-8")
+        try:
+            r = subprocess.run([ears_python(), str(here("_align.py")), str(src), str(tmp / "lyrics.txt"),
+                                f"{start:.2f}", f"{length:.2f}"], capture_output=True, text=True, timeout=150)
+            if r.returncode == 0 and r.stdout.strip().startswith("["):
+                lines.write_text(r.stdout.strip(), encoding="utf-8")
+        except subprocess.TimeoutExpired:
+            pass
+    try:
+        r = subprocess.run([ears_python(), str(here("_video.py")), str(src), str(cover), f"{start:.2f}", f"{length:.2f}",
+                            str(lines) if lines.exists() else "-", str(clip), title],
+                           capture_output=True, text=True, timeout=300)
+        if r.returncode == 0 and clip.exists():
+            n = len(json.loads(lines.read_text(encoding="utf-8"))) if lines.exists() else 0
+            return clip, f"в такт, строк субтитрами: {n}"
+        why = (r.stderr or r.stdout).strip()[-160:]
+    except subprocess.TimeoutExpired:
+        why = "рендер не уложился в 5 минут"
+    square = "scale={0}:{0}:force_original_aspect_ratio=increase,crop={0}:{0}"
+    ffmpeg("-loop", 1, "-framerate", 25, "-i", cover, "-ss", f"{start:.1f}", "-t", f"{length:.1f}", "-i", src,
+           "-map", "0:v", "-map", "1:a", "-vf", square.format(1080) + ",format=yuv420p",
+           "-c:v", "libx264", "-tune", "stillimage", "-preset", "veryfast", "-crf", 24,
+           "-af", f"afade=t=in:st=0:d=0.6,afade=t=out:st={length - 2:.1f}:d=2", "-c:a", "aac", "-b:a", "192k",
+           "-t", f"{length:.1f}", "-shortest", "-movflags", "+faststart", clip)
+    return clip, f"статичная обложка — {why}"
+
+def lyrics_comment(reply_to, path_arg):
+    """Текст песни — комментарием под постом: ответ на его копию в группе обсуждения."""
+    src = local(path_arg)
+    e = song_entry(src)
     if not e.get("lyrics"):
         fail(f"у {src.name} нет текста в songs.jsonl")
     title = e.get("title") or src.stem
@@ -443,13 +483,9 @@ def release(path_arg, caption, cover_arg="", start=None, length=None):
     square = "scale={0}:{0}:force_original_aspect_ratio=increase,crop={0}:{0}"
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        thumb, clip = tmp / "thumb.jpg", tmp / "snippet.mp4"
+        thumb = tmp / "thumb.jpg"
         ffmpeg("-i", cover, "-vf", square.format(320), "-q:v", 4, thumb)
-        ffmpeg("-loop", 1, "-framerate", 25, "-i", cover, "-ss", f"{start:.1f}", "-t", f"{length:.1f}", "-i", src,
-               "-map", "0:v", "-map", "1:a", "-vf", square.format(1080) + ",format=yuv420p",
-               "-c:v", "libx264", "-tune", "stillimage", "-preset", "veryfast", "-crf", 24,
-               "-af", f"afade=t=in:st=0:d=0.6,afade=t=out:st={length - 2:.1f}:d=2", "-c:a", "aac", "-b:a", "192k",
-               "-t", f"{length:.1f}", "-shortest", "-movflags", "+faststart", clip)
+        clip, how = snippet_video(src, cover, start, length, title, tmp)
         video = {"chat_id": channel, "video": "attach://clip", "thumbnail": "attach://thumb", "width": 1080,
                  "height": 1080, "duration": int(round(length)), "supports_streaming": "true"}
         msg = tg_captioned(token, "sendVideo", lambda rich: with_caption(video, caption, rich),
@@ -461,7 +497,7 @@ def release(path_arg, caption, cover_arg="", start=None, length=None):
                          "message_id": msg["message_id"], "format": "release", "file": rel(src), "cover": rel(cover),
                          "snippet": [round(start), round(length)]})
     lyrics_later(msg["message_id"], src)
-    print(f"релиз «{title}» в канале {t:%d.%m %H:%M}: видео-сниппет {length:.0f} с с {start:.0f}-й секунды — {link}; "
+    print(f"релиз «{title}» в канале {t:%d.%m %H:%M}: видео-сниппет {length:.0f} с с {start:.0f}-й секунды ({how}) — {link}; "
           f"текст песни повиснет в комментариях сам")
     send("channel", None, path_arg, cover=cover, lyrics=False)
 

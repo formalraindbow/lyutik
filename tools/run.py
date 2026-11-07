@@ -453,7 +453,7 @@ def call_tool(name, args, dry):
                 return f"не опубликовано: {problem}"
             extra = [x for k in ("cover", "start", "seconds") if args.get(k) not in (None, "")
                      for x in (f"--{k}", args[k])]
-            return script("song", "release", args["path"], args["caption"], *extra, dry=dry, timeout=420)
+            return script("song", "release", args["path"], args["caption"], *extra, dry=dry, timeout=600)
         if name == "post_song" and long_caption(args.get("caption")):
             return "не опубликовано: подпись к песне — одна строка от тебя, сожми"
         if name == "post_song":
