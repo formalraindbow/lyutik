@@ -145,7 +145,32 @@ def lyrics(ref):
         fail(f"Яндекс Музыка: {(r.stderr or r.stdout).strip()[-240:]}")
     head, _, text = r.stdout.partition("\n")
     title, artists = (head.split("\t") + ["?", "?"])[:2]
-    print(f"«{title}» — {artists}, текст с Яндекс Музыки:\n\n{text.strip()}")
+    print(f"«{title}» — {artists}, текст с Яндекс Музыки:\n\n{text.strip()}\n\n{tally(text)}")
+
+STOP = set("тебя меня тебе мной тобой этот этого этой эти когда только чтобы если будто потому такой такая такие "
+           "всего всех есть него нему нами вами свой своя свои своих тоже даже было были будет буду просто очень "
+           "зачем вдруг опять снова сейчас тогда туда сюда здесь где-то".split())
+
+def tally(text):
+    """Счёт повторов кодом: на глаз модель врёт в числах (проба 8.11: «растоплю» 14 вместо 12, «навсегда» 12 вместо 17)."""
+    lines = [l.strip().lower() for l in text.splitlines() if l.strip()]
+    words = re.findall(r"[а-яёa-z]+(?:-[а-яёa-z]+)?", text.lower())
+    freq = {}
+    for w in words:
+        if len(w) >= 4 and w not in STOP:
+            freq[w] = freq.get(w, 0) + 1
+    top = sorted(((n, w) for w, n in freq.items() if n >= 3), reverse=True)[:8]
+    rep = {}
+    for l in lines:
+        rep[l] = rep.get(l, 0) + 1
+    again = sorted(((n, l) for l, n in rep.items() if n >= 3), reverse=True)[:4]
+    out = [f"Счёт по тексту (считал код — эти числа верные): слов {len(words)}, строк {len(lines)}, "
+           f"разных строк {len(rep)}."]
+    if top:
+        out.append("Чаще всего: " + ", ".join(f"«{w}» ×{n}" for n, w in top) + ".")
+    if again:
+        out.append("Строки по кругу: " + "; ".join(f"«{l}» ×{n}" for n, l in again) + ".")
+    return "\n".join(out)
 
 def library():
     rows = [x for x in read_jsonl(LIB) if (ROOT / x.get("path", "")).exists()]
