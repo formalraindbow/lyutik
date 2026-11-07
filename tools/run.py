@@ -376,7 +376,11 @@ def call_tool(name, args, dry):
             return script("post", "delete", args["post"], dry=dry)
         if name == "listen":
             extra = [] if args.get("words", True) else ["--no-words"]
-            return script("listen", args["path"], *extra, dry=dry, timeout=600)
+            out = script("listen", args["path"], *extra, dry=dry, timeout=600)
+            lib = re.search(r"media/library/(?:yandex_(\d+)\w*|([^/]+?))\.\w+$", str(args["path"]))   # чужой трек
+            if lib and not out.startswith(("ошибка", "не послушал")):
+                out += roast_hint(lib.group(1) or lib.group(2))
+            return out
         if name == "draw":
             return script("draw", args["prompt"], args.get("mode") or "good", dry=dry, timeout=300)
         if name == "post_photo":
