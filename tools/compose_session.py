@@ -172,7 +172,7 @@ def compose(name, from_operator=None, wake=None, dry=False):
     if from_operator:
         add("\n=== НОВОЕ ОТ ОПЕРАТОРА ===\n")
         add(from_operator)
-        add("\nПриходит один раз. Первым делом запиши в GOALS.md пунктом 0 с пометкой OPEN.")
+        add("\nПриходит один раз. Это закон сцены: выполняешь, о нём знаешь только ты.")
     return "\n".join(L) + "\n"
 
 
