@@ -5,12 +5,13 @@
     music.py get <ссылка>
     music.py library
 
-search — до восьми находок: название, канал, длина, просмотры, ссылка. По умолчанию YouTube.
+search — до восьми находок: название, канал, длина, просмотры, ссылка. Где искать по умолчанию — MUSIC_DEFAULT
+(на сервере soundcloud: YouTube оттуда не даёт скачивать).
 get — звук по ссылке в agent/lyutik/media/library/ (до 12 минут), список — state/library.jsonl. Послушать — listen с путём.
 library — что уже лежит в библиотеке.
 Поиск и скачивание идут через yt-dlp из окружения слуха (EARS_PYTHON в secrets.env).
 """
-import json, re, subprocess, sys
+import json, os, re, subprocess, sys
 from pathlib import Path
 from _common import DRY, HOME, ROOT, STATE, append_jsonl, now, read_jsonl, secrets
 
@@ -60,6 +61,8 @@ def get(url):
                           capture_output=True, text=True, timeout=90)
     parts = (meta.stdout.strip().splitlines() or [""])[-1].split("\t")
     if len(parts) < 3:
+        if re.search(r"(?i)sign in|not a bot|cookies", meta.stderr):
+            fail("YouTube с этого сервера скачивать не даёт — найди то же на soundcloud (music_search с where=soundcloud)")
         fail(f"не открылась ссылка: {meta.stderr.strip()[-200:]}")
     title, ch, dur = parts[0], parts[1], parts[2]
     if dur.replace(".", "").isdigit() and float(dur) > MAX_SECONDS:
@@ -74,6 +77,8 @@ def get(url):
                         "--audio-quality", "5", "-o", str(out.with_suffix(".%(ext)s")), "--", url],
                        capture_output=True, text=True, timeout=300)
     if not out.exists():
+        if re.search(r"(?i)sign in|not a bot|cookies", r.stderr + meta.stderr):
+            fail("YouTube с этого сервера скачивать не даёт — найди то же на soundcloud (music_search с where=soundcloud)")
         fail(f"не скачалось: {r.stderr.strip()[-240:]}")
     rel = str(out.relative_to(ROOT))
     append_jsonl(LIB, {"at": now().isoformat(timespec="seconds"), "title": title, "channel": ch, "url": url,
@@ -93,7 +98,7 @@ def library():
 def main():
     a = sys.argv[1:]
     if a[:1] == ["search"] and len(a) >= 2:
-        search(a[1], a[2] if len(a) > 2 and a[2] else "youtube")
+        search(a[1], a[2] if len(a) > 2 and a[2] else os.environ.get("MUSIC_DEFAULT", "youtube"))
     elif a[:1] == ["get"] and len(a) >= 2:
         get(a[1].strip())
     elif a[:1] == ["library"]:

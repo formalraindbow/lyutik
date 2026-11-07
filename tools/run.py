@@ -124,7 +124,7 @@ TOOLS = [
        "комментариев (comment).", optional=("caption", "chat", "comment"),
        path=("string", "путь к песне или куску"), caption=("string", "подпись"),
        chat=("integer", "номер чата, если в личку"), comment=("integer", "номер комментария, если в ветку")),
-    fn("music_search", "Найти чужую музыку: до восьми находок с названием, каналом, длиной и ссылкой. Где — youtube (по умолчанию) или soundcloud.",
+    fn("music_search", "Найти чужую музыку: до восьми находок с названием, каналом, длиной и ссылкой. Где — soundcloud или youtube; скачивать вернее с soundcloud.",
        optional=("where",), query=("string", "что ищешь: исполнитель, песня, жанр"), where=("string", "youtube или soundcloud")),
     fn("music_get", "Скачать трек по ссылке в свою библиотеку (до 12 минут). Дальше — listen с путём из ответа.",
        url=("string", "ссылка из music_search")),
@@ -376,7 +376,7 @@ def call_tool(name, args, dry):
                 return script("song", "chat", args["chat"], args["path"], args.get("caption") or "", dry=dry, timeout=240)
             return script("song", "channel", args["path"], args.get("caption") or "", dry=dry, timeout=240)
         if name == "music_search":
-            return script("music", "search", args["query"], args.get("where") or "youtube", dry=dry, timeout=120)
+            return script("music", "search", args["query"], args.get("where") or "", dry=dry, timeout=120)
         if name == "music_get":
             return script("music", "get", args["url"], dry=dry, timeout=360)
         if name == "music_library":
