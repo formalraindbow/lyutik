@@ -345,7 +345,10 @@ def lyrics_comment(reply_to, path_arg):
     group = discussion(token, channel)
     msg = tg(token, "sendMessage", {"chat_id": group, "text": lyrics_html(title, e["lyrics"]), "parse_mode": "HTML",
                                     "reply_parameters": json.dumps({"message_id": int(reply_to), "allow_sending_without_reply": True})}, {})
-    post = next((d.get("post") for d in read_jsonl(DIALOGS) if d.get("chat") == group and d.get("message_id") == int(reply_to)), None)
+    try:
+        post = json.loads((STATE / "threads.json").read_text(encoding="utf-8")).get(str(reply_to))
+    except (OSError, ValueError):
+        post = None
     append_jsonl(DIALOGS, {"at": now().isoformat(timespec="seconds"), "dir": "out", "kind": "comment", "post": post,
                            "chat": group, "reply_to": int(reply_to), "message_id": msg["message_id"],
                            "text": f"текст песни «{title}» в комментариях"})
