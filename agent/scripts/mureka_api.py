@@ -40,14 +40,19 @@ def _call(method, path, body=None, form=None, timeout=120):
     elif body is not None:
         data = json.dumps(body, ensure_ascii=False).encode()
         headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(BASE + path, data=data, method=method, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read().decode() or "{}")
-    except urllib.error.HTTPError as e:
-        raise MurekaError(f"Mureka ответила {e.code}: {e.read().decode(errors='replace')[:300]}")
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        raise MurekaError(f"нет связи с Mureka: {getattr(e, 'reason', e)}")
+    for attempt in range(4):                               # Mureka держит один запрос за раз: 429 «concurrent» — подождать
+        req = urllib.request.Request(BASE + path, data=data, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return json.loads(r.read().decode() or "{}")
+        except urllib.error.HTTPError as e:
+            text = e.read().decode(errors="replace")
+            if e.code == 429 and "concurrent" in text.lower() and attempt < 3:
+                time.sleep(20 * (attempt + 1))
+                continue
+            raise MurekaError(f"Mureka ответила {e.code}: {text[:300]}")
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            raise MurekaError(f"нет связи с Mureka: {getattr(e, 'reason', e)}")
 
 def generate(lyrics, prompt="", vocal_id="", melody_id="", n=2, model="mureka-9.5", gender=""):
     """Заказ песни; возвращает номер задачи. melody_id ни с чем не совмещается (так в документации) и русский

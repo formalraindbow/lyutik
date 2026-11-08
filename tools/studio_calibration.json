@@ -1,0 +1,285 @@
+{
+ "date": "2026-11-08",
+ "intent": {
+  "want": "лютня, спокойно, без барабанов",
+  "avoid": "синтезатор"
+ },
+ "note": "разбор Mureka (/v1/song/describe) по дублю и метка на слух Вовы; проба1_дубль1 и проба4 — без описания (в журнале его не было); inferred — метка не из его слов, а по его задаче «лютня и ничего лишнего» (хор, барабаны, бас): прямого «брак» на эти две песни канала он не говорил",
+ "takes": [
+  {
+   "take": "проба1_дубль1",
+   "how": "Mureka напрямую, промпт лютни + SOLO",
+   "ear": "годно",
+   "said": "«нет характера, но по стилю всё ок; задача — лютня и ничего лишнего — норм»",
+   "mureka": {
+    "instrument": [
+     "Lead Vocal (Male, Warm, Intimate)",
+     "Nylon-String Acoustic Guitar"
+    ],
+    "genres": [
+     "Russian Chanson",
+     "Singer-Songwriter",
+     "Acoustic"
+    ],
+    "tags": [
+     "melancholic",
+     "introspective",
+     "sparse",
+     "contemplative",
+     "gentle",
+     "lyrical"
+    ],
+    "description": ""
+   },
+   "inferred": false
+  },
+  {
+   "take": "проба1_дубль2",
+   "how": "Mureka напрямую, промпт лютни + SOLO",
+   "ear": "годно",
+   "said": "«со вторым то же самое»",
+   "mureka": {
+    "instrument": [
+     "Lead Vocal (Male, Warm, Intimate)",
+     "Nylon-String Acoustic Guitar"
+    ],
+    "genres": [
+     "Russian Chanson",
+     "Singer-Songwriter",
+     "Folk"
+    ],
+    "tags": [
+     "melancholic",
+     "introspective",
+     "sparse",
+     "acoustic",
+     "contemplative",
+     "gentle",
+     "lyrical",
+     "nostalgic",
+     "intimate",
+     "melancholy",
+     "reflective"
+    ],
+    "description": "This is an intimate and melancholic Russian chanson piece featuring only a male vocal and a solo nylon-string acoustic guitar. The arrangement is exceptionally sparse, creating a deeply personal atmosphere. The guitar provides a constant, gentle arpeggiated accompaniment that establishes a steady, hypnotic rhythm and harmonic foundation. Its warm, resonant timbre is central to the song's contemplative mood. The male vocal performance is the emotional core, delivered in a soft, warm, and slightly breathy tone that conveys a profound sense of intimacy and vulnerability. The singer's phrasing is unhurried and conversational, enhancing the song's narrative quality. The melody is simple yet profoundly expressive, with a recurring theme that evolves subtly throughout the track. The overall feeling is one of quiet reflection and nostalgia, with the music perfectly capturing a mood of gentle sadness and introspection.",
+    "trace_id": "48422f741c260875747acc95cb2e7d79"
+   },
+   "inferred": false
+  },
+  {
+   "take": "2026-11-08_0046_через_трещину_акустика",
+   "how": "NanoGPT + клон, промпт лютни + SOLO",
+   "ear": "править",
+   "said": "вышла в канал; «стало лучше» — относительно старой",
+   "mureka": {
+    "instrument": [
+     "Lead Vocal (Male, Powerful, Raspy, Russian)",
+     "Backing Vocals (Male Choir, Layered Harmonies)",
+     "Nylon-String Acoustic Guitar",
+     "Drum Kit",
+     "Bass Guitar",
+     "Synth Pad"
+    ],
+    "genres": [
+     "Russian Pop",
+     "Pop Ballad",
+     "Singer-Songwriter"
+    ],
+    "tags": [
+     "Emotional",
+     "Melancholic",
+     "Reflective",
+     "Anthemic",
+     "Soaring",
+     "Dynamic Build-up",
+     "Cathartic",
+     "Driving Rhythm",
+     "Cinematic"
+    ],
+    "description": "This is a professionally produced Russian pop ballad that masterfully builds from intimate reflection to an epic, anthemic climax. The song opens with a solitary nylon-string acoustic guitar playing a melancholic arpeggiated figure, immediately establishing a reflective mood. A male lead vocal enters with a clear, raspy timbre, delivering the verses with a sense of personal narrative. The arrangement strategically builds in intensity; the first chorus introduces a simple, driving drum beat and a solid bassline, lifting the energy. The track's defining feature is its massive dynamic shift into the final chorus, where it erupts into a powerful wall of sound. Here, the lead vocal becomes soaring and cathartic, layered with a massive male choir providing rich, multi-part harmonies. This creates a powerful, sing-along quality that feels both emotionally resonant and grandly cinematic.",
+    "trace_id": "bee26616b2db799dcaf99f9103b64c41"
+   },
+   "inferred": true
+  },
+  {
+   "take": "2026-11-08_0842_в_графе_живых",
+   "how": "NanoGPT + клон, промпт лютни + SOLO",
+   "ear": "править",
+   "said": "вышла в канал; хвалил концовку",
+   "mureka": {
+    "instrument": [
+     "Lead Vocal (Male, Powerful, Operatic)",
+     "Backing Vocals",
+     "Acoustic Guitar (Nylon-string)",
+     "Fiddle",
+     "Drum Kit",
+     "Bass Guitar",
+     "Synth Pad"
+    ],
+    "genres": [
+     "Russian Pop",
+     "Folk Pop",
+     "Ballad"
+    ],
+    "tags": [
+     "melancholic",
+     "emotional",
+     "dramatic",
+     "soaring",
+     "nostalgic",
+     "reflective",
+     "cinematic",
+     "heartfelt",
+     "anthemic"
+    ],
+    "description": "This is a grand and emotionally charged Russian folk-pop ballad built around a powerful male vocal performance. The song's signature sound is established in the intro with a clean, arpeggiated nylon-string acoustic guitar figure that persists throughout. The arrangement masterfully builds from sparse verses into an explosive, anthemic chorus. The lead vocalist delivers a highly dynamic performance, shifting from a clear, narrative tone in the verses to a full-throated, operatic belt in the choruses, conveying a deep sense of longing and passion. A poignant fiddle weaves intricate melodic lines and counter-melodies, adding a distinct folk flavor and emotional weight. The rhythm section provides a solid foundation with a steady drum beat and a warm bassline, while subtle synth pads swell in the background to enhance the epic, cinematic quality of the track. The most memorable part is the soaring chorus, where the full ensemble creates a powerful, uplifting wall of sound.",
+    "trace_id": "fcafba2cbbc5de42b62d611fda87ebaf"
+   },
+   "inferred": true
+  },
+  {
+   "take": "2026-11-07_2344_через_трещину",
+   "how": "NanoGPT + клон, промпт лютни",
+   "ear": "править",
+   "said": "«жалко, что выпустили»",
+   "mureka": {
+    "instrument": [
+     "Lead Vocal (Male, Powerful, Raspy)",
+     "Backing Vocals",
+     "Acoustic Guitar (Fingerpicked)",
+     "Electronic Drum Kit",
+     "Synth Bass",
+     "Synth Lead",
+     "Synth Pad",
+     "Synth Strings"
+    ],
+    "genres": [
+     "Russian Rock",
+     "Pop-Rock",
+     "Alternative Rock"
+    ],
+    "tags": [
+     "anthemic",
+     "driving",
+     "energetic",
+     "melancholic",
+     "reflective",
+     "powerful",
+     "dynamic contrast",
+     "catchy",
+     "modern production"
+    ],
+    "description": "This is a high-energy Russian rock track that masterfully blends acoustic and electronic elements to create a powerful emotional arc. The song's signature feature is its stark dynamic contrast between sections. It begins with an intimate and melancholic atmosphere, established by a clean, fingerpicked acoustic guitar melody and a clear, raspy male lead vocal. This sparse arrangement in the verses builds tension that erupts into a massive, anthemic chorus. Here, the sound transforms into a wall of sound driven by a punchy electronic drum beat, a deep synth bass, and layered, soaring backing vocals. A bright, memorable synth lead melody serves as the main instrumental hook throughout the chorus. The production is polished and modern, effectively using synth pads and strings to add depth and a sense of grandeur to the choruses, creating a powerful feeling of catharsis.",
+    "trace_id": "9dc154df8a5dcd6fd9b78cdfcd853218"
+   },
+   "inferred": false
+  },
+  {
+   "take": "проба3_референс_дубль1",
+   "how": "Mureka напрямую, референс + промпт",
+   "ear": "править",
+   "said": "«репчина»",
+   "mureka": {
+    "instrument": [
+     "Lead Vocal (Male, Passionate, Strained)",
+     "Backing Vocals (Layered, Chanted)",
+     "Synth Lead (Plucky, Arpeggiated)",
+     "Electronic Drum Kit",
+     "Synth Bass",
+     "Synth Pad",
+     "Synth Keys",
+     "Electric Guitar (Distorted, Solo)"
+    ],
+    "genres": [
+     "Synth-pop",
+     "Electropop",
+     "Pop Rock"
+    ],
+    "tags": [
+     "Energetic",
+     "Driving",
+     "Catchy",
+     "Anthemic",
+     "Nostalgic",
+     "80s Vibe",
+     "Russian Pop",
+     "Melancholic",
+     "Passionate"
+    ],
+    "description": "This is a high-energy synth-pop track with strong pop-rock influences, characterized by its nostalgic 80s production aesthetic. The song's foundation is built upon a relentless four-on-the-floor electronic drum beat and a driving, pulsating synth bassline that together create an insistent, danceable groove. The most prominent instrumental hook is a bright, plucky arpeggiated synth lead that opens the track and serves as the main melodic motif throughout. The arrangement builds dynamically from sparser verses into a massive, anthemic chorus. In the chorus, the texture thickens significantly with the addition of layered, chanted backing vocals that create a powerful, singalong effect. A key feature is the bridge, which introduces a soaring, distorted electric guitar solo that injects a raw rock energy into the otherwise polished synth-driven sound. The male lead vocal is delivered with a passionate, slightly strained quality, conveying a sense of earnestness and intensity that perfectly matches the song's energetic and melancholic mood.",
+    "trace_id": "b10117ea9ca13628996ff83e2fc80863"
+   },
+   "inferred": false
+  },
+  {
+   "take": "проба3_референс_дубль2",
+   "how": "Mureka напрямую, референс + промпт",
+   "ear": "править",
+   "said": "«поп, лютни нет, кроме первых секунд»",
+   "mureka": {
+    "instrument": [
+     "Lead Vocal (Female, Youthful, Clear)",
+     "Backing Vocals",
+     "Synth Lead",
+     "Electronic Drum Kit",
+     "Synth Bass",
+     "Arpeggiated Synth",
+     "Synth Pad",
+     "Synth Brass"
+    ],
+    "genres": [
+     "Synth-pop",
+     "Electropop",
+     "Pop"
+    ],
+    "tags": [
+     "catchy",
+     "driving",
+     "energetic",
+     "nostalgic",
+     "80s-inspired",
+     "anthemic",
+     "uplifting",
+     "youthful",
+     "bittersweet"
+    ],
+    "description": "This is a quintessential synth-pop track with a strong 80s influence, characterized by its bright, polished production and dynamic arrangement. The song's most defining feature is its incredibly catchy and memorable main melody, played on a bright, bell-like synth lead that opens the track and serves as its central hook. The rhythmic foundation is a classic, driving four-on-the-floor beat from an electronic drum kit, locked in with a pulsating synth bassline that provides a constant sense of forward momentum. The verses are relatively sparse, allowing the clear and youthful female lead vocal to take center stage, delivering the melody with a sweet, slightly breathy quality. The energy builds significantly into the chorus, which erupts with layered backing vocals, lush synth pads, and triumphant synth brass stabs, creating a powerful and anthemic feel. A key structural element is the instrumental bridge, where the track breaks down to focus on the arpeggiated synth and atmospheric pads before launching into a final, high-energy chorus. The overall mood is a compelling mix of uplifting nostalgia and bittersweet reflection.",
+    "trace_id": "9aa2df0443efaec6918817908e0c4f79"
+   },
+   "inferred": false
+  },
+  {
+   "take": "проба4",
+   "how": "Mureka напрямую, референс + стиль",
+   "ear": "править",
+   "said": "«ужас»",
+   "mureka": {
+    "instrument": [
+     "Lead Vocal (Male, Female, Clear, Youthful)",
+     "Backing Vocals",
+     "Electronic Drum Kit",
+     "Synth Lead",
+     "Synth Bass",
+     "Synth Pad",
+     "Sound Effects"
+    ],
+    "genres": [
+     "Pop",
+     "Electropop",
+     "Dance-Pop",
+     "Synth-pop"
+    ],
+    "tags": [
+     "Ukrainian Pop",
+     "Ukrainian Music",
+     "2010s Pop",
+     "Danceable",
+     "Energetic",
+     "Catchy"
+    ],
+    "description": ""
+   },
+   "inferred": false
+  }
+ ]
+}

@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """Песни с настоящим вокалом: сочинить, нарезать сниппет, выпустить.
 
-    song.py make "<название>" "<звук>" "<текст песни>" [--cover "<что на обложке>"]
+    song.py make "<название>" "<звук>" "<текст песни>" [--cover "<что на обложке>"] [--want "<что должно звучать>"]
+                 [--avoid "<чего быть не должно>"] [--draft]
     song.py snippet <путь к песне> [секунд] [с какой секунды]
     song.py channel <путь> ["<подпись>"] [--cover <путь к картинке>]
     song.py chat <номер чата> <путь> ["<подпись>"] [--cover <путь к картинке>]
     song.py comment <номер комментария> <путь> ["<подпись>"] [--cover <путь к картинке>]
-    song.py release <путь к песне> "<подпись>" [--cover <путь или описание>] [--start с] [--seconds с]
+    song.py release <путь к песне> "<подпись>" [--cover <путь или описание>] [--start с] [--seconds с] [--despite "<почему>"]
     song.py lyrics <номер сообщения в обсуждении> <путь к песне>
     song.py clone <образец 15–30 с> ["<описание>"]   клон голоса на своём аккаунте Mureka ($5), печатает vocal_id
 
-make — песня через Mureka (шлюз NanoGPT, ключ LLM_API_KEY): текст в разметке [Verse] / [Chorus], звук — пара фраз
-по-английски (жанр, инструменты, темп). Голос — свой клон (MUREKA_VOCAL_ID в secrets.env, модель mureka/api/generate/song);
-без него — голос модели по умолчанию (Mureka V9.5). Генерация идёт минуту-две. Песня длиннее SONG_MAX_SECONDS (по умолчанию 150)
+make — песня через Mureka: напрямую (MUREKA_API_KEY, два дубля, строки с таймкодами; --draft — черновик на mureka-9
+втрое дешевле) или через шлюз NanoGPT (LLM_API_KEY, один дубль). Текст в разметке [Verse] / [Chorus], звук — пара фраз
+по-английски (жанр, инструменты, темп). --want / --avoid — замысел: что должно звучать и чего быть не должно; по нему
+studio.py check слушает дубли придирчиво. Всё, что тратится на песню, считается в её бюджет (SONG_BUDGET).
+Генерация идёт минуту-две. Песня длиннее SONG_MAX_SECONDS (по умолчанию 150)
 обрезается с затуханием — это крайняя мера: обрезка съедает концовку. За сутки — не больше SONG_DAILY_LIMIT песен (по умолчанию 3): каждая стоит денег.
 С --cover обложка рисуется через draw.generate (anymodel, модель COVER_MODEL), пока поётся песня; не вышла — песня готова.
 Песни лежат в agent/lyutik/media/songs/, обложки — в media/covers/, список — state/songs.jsonl.
@@ -21,7 +24,8 @@ channel / chat / comment — отправить песню или сниппет
 Обложка — из --cover (путь к картинке; любой другой текст — описание, обложка рисуется), иначе последняя, назначенная
 песне (кусок берёт обложку своей песни). Она уходит дважды: внутри mp3 (ID3, 800 px — видна у скачавших) и превью
 для Telegram (jpeg до 320 px и 200 КБ, так требует sendAudio).
-release — релиз в канал: видео-сниппет 9:16 в формате промо (_video.py: размытый фон, обложка карточкой, название,
+release — релиз в канал, только проверенной песни (studio.py check, вердикт «годно»; вопреки ушам — --despite с причиной,
+когда на правку бюджета уже нет): видео-сниппет 9:16 в формате промо (_video.py: размытый фон, обложка карточкой, название,
 спетые строки субтитрами, глитч-вступление; 15 с с трети записи) с подписью,
 следом — вся песня треком с обложкой. Текст песни уходит комментарием под релиз сам: release оставляет отметку
 в state/lyrics_pending.json, цикл (run.py) видит пост в обсуждении и зовёт lyrics.
@@ -30,7 +34,7 @@ lyrics — текст песни из songs.jsonl комментарием по�
 import html, json, re, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request, uuid
 from pathlib import Path
 from _common import DRY, HOME, ROOT, STATE, append_jsonl, md_caption, now, plain_caption, read_jsonl, secrets, tg_link
-import draw, mureka_api
+import draw, drafts, mureka_api
 
 SONGS_DIR = HOME / "media" / "songs"
 COVERS_DIR = HOME / "media" / "covers"
@@ -38,8 +42,9 @@ COVER_FRAME = "Обложка музыкального трека, квадра�
 COVER_MAX = 1500
 COVER_MODEL = "anymedia/seedream-5-pro"   # замер 08.11: ближе всех к фото; gpt-image глянцевый, nano-banana-pro путал лютню с гитарой
 SONGS, POSTS, DIALOGS = STATE / "songs.jsonl", STATE / "posts.jsonl", STATE / "dialogs.jsonl"
-LYRICS_PENDING = STATE / "lyrics_pending.json"
-RELEASE_GAP_HOURS = 48     # релиз в канал не чаще раза в 2–3 дня (решение 8.11): между ними — слова, дубли, отбор     # пост канала → песня: текст повиснет комментарием, когда пост дойдёт до обсуждения
+LYRICS_PENDING = STATE / "lyrics_pending.json"   # пост канала → песня: текст повиснет комментарием, когда пост дойдёт до обсуждения
+SONG_BUDGET = 1.5          # $ на одну песню (все дубли, проверки, правки и ремиксы) — дальше выпускай лучшее или в черновики
+RELEASE_GAP_HOURS = 48     # релиз в канал не чаще раза в 2–3 дня (решение 8.11): между ними — слова, дубли, отбор
 MODEL, COST = "mureka-ai/mureka-v9.5/generate-song", 0.225          # без своего голоса
 VOICE_MODEL, VOICE_COST = "mureka/api/generate/song", 0.5            # со своим голосом: vocal_id видит только эта обёртка;
 # цена по прайсу NanoGPT (8.11) — сам NanoGPT стоимость в ответе не присылает, раньше здесь стояло 0.15 и в журнал шло оно
@@ -116,8 +121,22 @@ def nano(method, url, body=None):
     except (urllib.error.URLError, TimeoutError) as e:
         fail(f"нет связи с NanoGPT: {getattr(e, 'reason', e)}")
 
-def make(title, sound, lyrics, cover=""):
+def spent_on(title):
+    """Сколько денег ушло на песню с этим названием: каждая запись с ценой — дубль, проверка, правка или ремикс."""
+    return round(sum(float(x.get("cost") or 0) for x in read_jsonl(SONGS)
+                     if x.get("title") == title and not x.get("dry")), 3)
+
+def budget_block(title, cost):
+    budget = float(secrets().get("SONG_BUDGET") or SONG_BUDGET)
+    done = spent_on(title)
+    if done + cost > budget + 1e-9:
+        return (f"на «{title}» ушло ${done:.2f} из ${budget:.2f} — бюджет песни кончился: выпусти лучшее из сделанного "
+                f"или убери песню в черновики")
+    return ""
+
+def make(title, sound, lyrics, cover="", want="", avoid="", draft=False):
     title, sound, lyrics, cover = title.strip(), sound.strip(), lyrics.strip(), (cover or "").strip()
+    want, avoid = (want or "").strip(), (avoid or "").strip()
     lyrics = "\n".join(c for l in lyrics.splitlines()            # в скобках модель поёт вторым голосом — он поёт один
                        for c in [re.sub(r"[ \t]*\([^)\n]*\)", "", l).rstrip()] if c.strip() or not l.strip())
     if not title or not sound or not lyrics:
@@ -154,8 +173,11 @@ def make(title, sound, lyrics, cover=""):
     style = f"{sound.rstrip(' .')}. {SOLO}"
     s_ = secrets()
     if s_.get("MUREKA_API_KEY"):                          # напрямую: $0.15 за песню, два дубля, строки с таймкодами
-        vocal, model = s_.get("MUREKA_DIRECT_VOCAL_ID", ""), "mureka-9.5"
+        vocal, model = s_.get("MUREKA_DIRECT_VOCAL_ID", ""), ("mureka-9" if draft else "mureka-9.5")
         n = setting("SONG_TAKES", 2)
+        problem = budget_block(title, mureka_api.SONG_PRICE.get(model, 0.15) * n)
+        if problem:
+            fail(problem)
         try:
             run = mureka_api.generate(lyrics, style, vocal_id=vocal, n=n, model=model, gender="" if vocal else "male")
             choices = mureka_api.wait(run, limit=420)
@@ -168,7 +190,7 @@ def make(title, sound, lyrics, cover=""):
                 continue
             with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=180) as r:
                 raw = r.read()
-            takes.append((raw, mureka_api.lines_of(ch)))
+            takes.append((raw, mureka_api.lines_of(ch), ch.get("id")))
         if not takes:
             fail(f"Mureka вернула задачу {run} без песен")
         cost, voice = mureka_api.SONG_PRICE.get(model, 0.15), vocal or "по умолчанию"
@@ -189,7 +211,7 @@ def make(title, sound, lyrics, cover=""):
             st = nano("GET", f"{API}/tts/status?{q}")
             if st.get("status") == "completed" and st.get("audioUrl"):
                 with urllib.request.urlopen(urllib.request.Request(st["audioUrl"], headers={"User-Agent": UA}), timeout=120) as r:
-                    takes = [(r.read(), [])]
+                    takes = [(r.read(), [], None)]
                 break
             if st.get("status") == "error":
                 fail(f"Mureka не спела: {st.get('error') or st.get('code') or st}")
@@ -201,7 +223,7 @@ def make(title, sound, lyrics, cover=""):
         if not art["path"] and not art["error"]:
             art["error"] = "художник не успел"
     cut, made = setting("SONG_MAX_SECONDS", 150), []   # 16 строк Mureka поёт за 85–105 с, с концовкой
-    for i, (raw, lines) in enumerate(takes, 1):
+    for i, (raw, lines, mureka_id) in enumerate(takes, 1):
         path = out if len(takes) == 1 else out.with_name(f"{out.stem}_дубль{i}.mp3")
         full = path.with_suffix(".full.mp3")
         full.write_bytes(raw)
@@ -218,24 +240,28 @@ def make(title, sound, lyrics, cover=""):
         if lines:                                         # строки как их спели — для субтитров сниппета
             path.with_suffix(".lines.json").write_text(json.dumps(lines, ensure_ascii=False), encoding="utf-8")
         entry = {"at": t.isoformat(timespec="seconds"), "title": title, "sound": sound, "lyrics": lyrics,
-                 "path": rel(path), "seconds": round(seconds), "cost": cost, "run": run, "voice": voice, "style": style}
+                 "path": rel(path), "seconds": round(seconds), "cost": cost, "run": run, "voice": voice, "style": style,
+                 "model": model, "want": want, "avoid": avoid, "mureka_id": mureka_id, "draft": bool(draft) or None}
         if len(takes) > 1:
             entry.update(take=i, takes=len(takes))
         if art["path"]:
             entry.update(cover=rel(art["path"]), cover_prompt=cover)
         append_jsonl(SONGS, entry)
         made.append((path, seconds))
+        head = (f"\nзамысел: {drafts.esc(want)}" if want and i == 1 else "") + (f"\nбез: {drafts.esc(avoid)}" if avoid and i == 1 else "")
+        drafts.post(f"<b>«{drafts.esc(title)}»</b> · дубль {i} из {len(takes)} · {model} · ${cost}{head}", path, title=f"{title} — дубль {i}")
     drawn = (f" Обложка: {rel(art['path'])} — выйдет вместе с треком." if art["path"] else
              f" Обложки нет ({art['error']}): можно нарисовать draw и отдать post_song в cover.")
     if len(made) == 1:
         print(f"песня «{title}» готова: {rel(made[0][0])}, {made[0][1]:.0f} с, ${cost}"
               f"{', своим голосом' if voice != 'по умолчанию' else ''}.{drawn} "
-              f"Послушать — listen, выпустить — release, кусок на затравку — song_snippet.")
+              f"Дальше — придирчиво послушать (song_check): в канал выходит только проверенное.")
     else:
         listing = "; ".join(f"дубль {i}: {rel(pth)}, {sec:.0f} с" for i, (pth, sec) in enumerate(made, 1))
         print(f"песня «{title}» — {len(made)} дубля по ${cost}{', своим голосом' if voice != 'по умолчанию' else ''}: "
-              f"{listing}.{drawn} Послушай оба (listen) и выпусти лучший (release с путём дубля); "
-              f"остальные остаются черновиками.")
+              f"{listing}.{drawn} Выбери дубль и послушай его придирчиво (song_check); не годен — проверь второй, "
+              f"потом правь: одно место — song_edit, не тот звук — song_remix. Выпустить (release) можно дубль "
+              f"с вердиктом «годно», остальные — черновики.")
 
 def snippet(path_arg, length=25.0, start=None):
     src = local(path_arg)
@@ -443,6 +469,28 @@ def lyrics_comment(reply_to, path_arg):
                            "text": f"текст песни «{title}» в комментариях"})
     print(f"текст «{title}» — в комментариях, сообщение {msg['message_id']}")
 
+def last_check(src):
+    """Последняя придирчивая проверка этой записи (studio.py check); у куска — его песни."""
+    e = entry_for(src)
+    target = e.get("of") or rel(src)
+    return next((x for x in reversed(read_jsonl(SONGS)) if x.get("checked") == target and (DRY or not x.get("dry"))), {})
+
+def check_block(src, title, despite=""):
+    """Почему эту запись нельзя выпускать в канал; пусто — можно. Выходит проверенное с вердиктом «годно»;
+    вопреки ушам — только с причиной и когда на правку бюджета уже нет: иначе правят, а не выпускают."""
+    c = last_check(src)
+    if not c:
+        return "песню сначала слушают придирчиво: song_check с этим путём — в канал выходит только проверенное"
+    if c.get("verdict") == "годно":
+        return ""
+    flaws = "; ".join((c.get("confirmed") or []) + [f"нет: {m}" for m in c.get("missing") or []]) or "см. проверку"
+    if not (despite or "").strip():
+        return (f"проверка от {c.get('at', '')[:16].replace('T', ' ')} сказала «править» ({flaws}): поправь место "
+                f"(song_edit), смени звук (song_remix) или закажи заново — и проверь снова")
+    if not budget_block(title, 0.1):
+        return f"вопреки ушам выпускают, когда на правку денег уже нет; пока есть — правь ({flaws})"
+    return ""
+
 def release_block():
     """Почему сейчас нельзя выпускать песню в канал; пусто — можно. Считаются целые песни и релизы, снятые — нет."""
     import datetime as _dt
@@ -495,6 +543,8 @@ def send(where, target, path_arg, caption="", cover_arg="", cover=None, lyrics=T
     if where == "channel":
         if lyrics and not is_snippet and release_block():      # трек из release (lyrics=False) уже прошёл проверку
             fail(release_block())
+        if lyrics and check_block(src, title):                 # кусок — по проверке своей песни
+            fail(check_block(src, title))
         msg = tg_captioned(token, "sendAudio", lambda rich: with_caption({**data, "chat_id": channel}, caption, rich), files)
         link = tg_link(msg)
         append_jsonl(POSTS, {"at": t.isoformat(timespec="seconds"), "text": label, "link": link,
@@ -525,7 +575,7 @@ def send(where, target, path_arg, caption="", cover_arg="", cover=None, lyrics=T
         print(f"отправлено в ответ на №{target}: «{title}», {seconds:.0f} с{note}")
 
 
-def release(path_arg, caption, cover_arg="", start=None, length=None):
+def release(path_arg, caption, cover_arg="", start=None, length=None, despite=""):
     """Релиз: видео-сниппет (обложка в кадре, кусок песни) с подписью, следом вся песня треком с обложкой."""
     src = local(path_arg)
     if ".snippet_" in src.name:
@@ -535,9 +585,11 @@ def release(path_arg, caption, cover_arg="", start=None, length=None):
         fail("нужна подпись под сниппетом")
     if release_block():
         fail(release_block())
+    title = entry_for(src).get("title") or src.stem
+    if check_block(src, title, despite):
+        fail(check_block(src, title, despite))
     if len(caption) > 1024:
         fail(f"подпись {len(caption)} знаков — Telegram берёт до 1024")
-    title = entry_for(src).get("title") or src.stem
     cover = resolve_cover(cover_arg, src, title)
     if not cover and not DRY:
         fail("у песни нет обложки: опиши её в cover — нарисую, или дай путь к картинке")
@@ -569,7 +621,10 @@ def release(path_arg, caption, cover_arg="", start=None, length=None):
     link = tg_link(msg)
     append_jsonl(POSTS, {"at": t.isoformat(timespec="seconds"), "text": f"🎵 «{title}» — релиз\n{caption}", "link": link,
                          "message_id": msg["message_id"], "format": "release", "file": rel(src), "cover": rel(cover),
-                         "snippet": [round(start), round(length)]})
+                         "snippet": [round(start), round(length)], "despite": despite.strip() or None})
+    verdict = last_check(src).get("verdict") or ""
+    drafts.post(f"<b>«{drafts.esc(title)}»</b> · {drafts.esc(src.stem.split('_')[-1])} — выпущено в канал: {link}"
+                + (f"\nвопреки проверке ({drafts.esc(verdict)}): {drafts.esc(despite.strip())}" if despite.strip() else ""))
     lyrics_later(msg["message_id"], src)
     print(f"релиз «{title}» в канале {t:%d.%m %H:%M}: видео-сниппет {length:.0f} с с {start:.0f}-й секунды ({how}) — {link}; "
           f"текст песни повиснет в комментариях сам")
@@ -578,7 +633,9 @@ def release(path_arg, caption, cover_arg="", start=None, length=None):
 
 def main():
     a, flags = sys.argv[1:], {}
-    for flag in ("--cover", "--start", "--seconds"):
+    draft = "--draft" in a
+    a = [x for x in a if x != "--draft"]
+    for flag in ("--cover", "--start", "--seconds", "--want", "--avoid", "--despite"):
         if flag in a:
             i = a.index(flag)
             flags[flag], a = (a[i + 1] if i + 1 < len(a) else "").strip(), a[:i] + a[i + 2:]
@@ -587,7 +644,7 @@ def main():
         print(__doc__); sys.exit(1)
     cmd = a[0]
     if cmd == "make" and len(a) >= 4:
-        make(a[1], a[2], a[3], cover)
+        make(a[1], a[2], a[3], cover, flags.get("--want", ""), flags.get("--avoid", ""), draft)
     elif cmd == "snippet" and len(a) >= 2:
         snippet(a[1], a[2] if len(a) > 2 and a[2] else 25, a[3] if len(a) > 3 else None)
     elif cmd == "channel" and len(a) >= 2:
@@ -601,7 +658,7 @@ def main():
     elif cmd == "lyrics" and len(a) >= 3:
         lyrics_comment(a[1], a[2])
     elif cmd == "release" and len(a) >= 3:
-        release(a[1], a[2], cover, flags.get("--start") or None, flags.get("--seconds") or None)
+        release(a[1], a[2], cover, flags.get("--start") or None, flags.get("--seconds") or None, flags.get("--despite", ""))
     elif cmd in ("chat", "comment") and len(a) >= 3:
         try:
             target = int(a[1])
