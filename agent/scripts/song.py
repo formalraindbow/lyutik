@@ -39,7 +39,8 @@ COVER_MODEL = "anymedia/seedream-5-pro"   # замер 08.11: ближе все�
 SONGS, POSTS, DIALOGS = STATE / "songs.jsonl", STATE / "posts.jsonl", STATE / "dialogs.jsonl"
 LYRICS_PENDING = STATE / "lyrics_pending.json"     # пост канала → песня: текст повиснет комментарием, когда пост дойдёт до обсуждения
 MODEL, COST = "mureka-ai/mureka-v9.5/generate-song", 0.225          # без своего голоса
-VOICE_MODEL, VOICE_COST = "mureka/api/generate/song", 0.15           # со своим голосом: vocal_id видит только эта обёртка
+VOICE_MODEL, VOICE_COST = "mureka/api/generate/song", 0.5            # со своим голосом: vocal_id видит только эта обёртка;
+# цена по прайсу NanoGPT (8.11) — сам NanoGPT стоимость в ответе не присылает, раньше здесь стояло 0.15 и в журнал шло оно
 API = "https://api.nano-gpt.com/api"
 UA = "Mozilla/5.0 (Macintosh) lyutik/1.0"
 MAX_LINES = 16
