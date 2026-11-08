@@ -342,8 +342,11 @@ def remix(path_arg, sound):
     problem = song.budget_block(title, REMIX_COST)
     if problem:
         fail(problem)
+    prompt = f"{sound.rstrip(' .')}. {song.SOLO}"
+    if len(prompt) > song.PROMPT_MAX:
+        fail(f"звук {len(sound)} знаков — Mureka берёт до {song.PROMPT_MAX - len(song.SOLO) - 2}, сожми")
     try:
-        body = {"prompt": f"{sound.rstrip(' .')}. {song.SOLO}"[:1024], "lyrics": e.get("lyrics") or "", "model": "mureka-9.5",
+        body = {"prompt": prompt, "lyrics": e.get("lyrics") or "", "model": "mureka-9.5",
                 **source_id(e, src, "remix")}
         ch = mureka_api.wait(mureka_api._call("POST", "/v1/song/remix", body)["id"], limit=420)[0]
     except (mureka_api.MurekaError, IndexError, KeyError) as err:

@@ -51,9 +51,11 @@ VOICE_MODEL, VOICE_COST = "mureka/api/generate/song", 0.5            # со св
 API = "https://api.nano-gpt.com/api"
 UA = "Mozilla/5.0 (Macintosh) lyutik/1.0"
 MAX_LINES = 16
-# Лютик — независимый исполнитель (ядро, п. 12): один голос, без подпевок, хора и «завываний»; дописывается к звуку
-SOLO = ("solo male vocal, one voice only, close-mic dry vocal, plain direct delivery, "
-        "no backing vocals, no choir, no harmonies, no vocal runs, sparse arrangement")
+# Лютик — независимый исполнитель (ядро, п. 12): один голос, без подпевок, хора и «завываний»; дописывается к звуку.
+# Только это: подача и аранжировка — в его описании звука. «plain direct delivery, sparse arrangement» здесь стояли
+# до 8.11 и делали голос ровным — ухо Вовы: «нет характера, монотонный добренький голос»
+SOLO = "solo male vocal, one voice only, no backing vocals, no choir, no harmonies, no vocal runs"
+PROMPT_MAX = 1024          # Mureka: описание звука до 1024 знаков (документация /v1/song/generate)
 
 
 def fail(msg):
@@ -171,6 +173,8 @@ def make(title, sound, lyrics, cover="", want="", avoid="", draft=False):
     if cover:
         painter.start()
     style = f"{sound.rstrip(' .')}. {SOLO}"
+    if len(style) > PROMPT_MAX:
+        fail(f"звук {len(sound)} знаков — Mureka берёт до {PROMPT_MAX - len(SOLO) - 2}, сожми")
     s_ = secrets()
     if s_.get("MUREKA_API_KEY"):                          # напрямую: $0.15 за песню, два дубля, строки с таймкодами
         vocal, model = s_.get("MUREKA_DIRECT_VOCAL_ID", ""), ("mureka-9" if draft else "mureka-9.5")
