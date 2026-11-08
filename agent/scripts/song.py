@@ -37,7 +37,8 @@ COVER_FRAME = "Обложка музыкального трека, квадра�
 COVER_MAX = 1500
 COVER_MODEL = "anymedia/seedream-5-pro"   # замер 08.11: ближе всех к фото; gpt-image глянцевый, nano-banana-pro путал лютню с гитарой
 SONGS, POSTS, DIALOGS = STATE / "songs.jsonl", STATE / "posts.jsonl", STATE / "dialogs.jsonl"
-LYRICS_PENDING = STATE / "lyrics_pending.json"     # пост канала → песня: текст повиснет комментарием, когда пост дойдёт до обсуждения
+LYRICS_PENDING = STATE / "lyrics_pending.json"
+RELEASE_GAP_HOURS = 48     # релиз в канал не чаще раза в 2–3 дня (решение 8.11): между ними — слова, дубли, отбор     # пост канала → песня: текст повиснет комментарием, когда пост дойдёт до обсуждения
 MODEL, COST = "mureka-ai/mureka-v9.5/generate-song", 0.225          # без своего голоса
 VOICE_MODEL, VOICE_COST = "mureka/api/generate/song", 0.5            # со своим голосом: vocal_id видит только эта обёртка;
 # цена по прайсу NanoGPT (8.11) — сам NanoGPT стоимость в ответе не присылает, раньше здесь стояло 0.15 и в журнал шло оно
@@ -396,6 +397,26 @@ def lyrics_comment(reply_to, path_arg):
                            "text": f"текст песни «{title}» в комментариях"})
     print(f"текст «{title}» — в комментариях, сообщение {msg['message_id']}")
 
+def release_block():
+    """Почему сейчас нельзя выпускать песню в канал; пусто — можно. Считаются целые песни и релизы, снятые — нет."""
+    import datetime as _dt
+    times = []
+    for p in read_jsonl(POSTS):
+        if p.get("format") in ("release", "song") and not p.get("deleted_at") and not p.get("dry") \
+                and ".snippet_" not in str(p.get("file", "")):
+            try:
+                times.append(_dt.datetime.fromisoformat(p["at"]))
+            except (KeyError, ValueError):
+                pass
+    if not times:
+        return ""
+    last = max(times)
+    ready = last + _dt.timedelta(hours=setting("RELEASE_GAP_HOURS", RELEASE_GAP_HOURS))
+    if now() >= ready:
+        return ""
+    return (f"прошлый релиз — {last:%d.%m %H:%M}, следующий не раньше {ready:%d.%m %H:%M}: между релизами "
+            f"пишутся слова, пробуются дубли, выбирается лучший")
+
 def send(where, target, path_arg, caption="", cover_arg="", cover=None, lyrics=True):
     src = local(path_arg)
     e = entry_for(src)
@@ -426,6 +447,8 @@ def send(where, target, path_arg, caption="", cover_arg="", cover=None, lyrics=T
             cover, note = None, f", без обложки — не прицепилась: {str(err)[:120]}"
     label = f"🎵 «{title}»" + (" — кусок" if is_snippet else "") + (f"\n{caption.strip()}" if caption.strip() else "")
     if where == "channel":
+        if lyrics and not is_snippet and release_block():      # трек из release (lyrics=False) уже прошёл проверку
+            fail(release_block())
         msg = tg_captioned(token, "sendAudio", lambda rich: with_caption({**data, "chat_id": channel}, caption, rich), files)
         link = tg_link(msg)
         append_jsonl(POSTS, {"at": t.isoformat(timespec="seconds"), "text": label, "link": link,
@@ -464,6 +487,8 @@ def release(path_arg, caption, cover_arg="", start=None, length=None):
     caption = (caption or "").strip()
     if not caption:
         fail("нужна подпись под сниппетом")
+    if release_block():
+        fail(release_block())
     if len(caption) > 1024:
         fail(f"подпись {len(caption)} знаков — Telegram берёт до 1024")
     title = entry_for(src).get("title") or src.stem
