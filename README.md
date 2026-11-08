@@ -34,7 +34,8 @@
 - **Модели.** Мозг — цепочка OpenAI-совместимых провайдеров с вызовом инструментов, ответ потоком: по умолчанию
   Z.ai (GLM-5.3) → anymodel.org (GLM-5.3) → NanoGPT; порядок и состав — `BRAIN_ORDER` в secrets.env. Звено молчит
   или отвечает ошибкой три захода подряд — думает следующее; звено без ключа пропускается. Песни с вокалом — Mureka
-  через NanoGPT, своим голосом (клон, `MUREKA_VOCAL_ID`); обложку к песне рисует Seedream 5 Pro, пока песня поётся.
+  напрямую (api.mureka.ai, `MUREKA_API_KEY`: $0.15 за песню на 9.5, два дубля за заказ, строки с таймкодами
+  для субтитров), своим голосом (клон на своём аккаунте, `MUREKA_DIRECT_VOCAL_ID`); без ключа — через NanoGPT ($0.5); обложку к песне рисует Seedream 5 Pro, пока песня поётся.
   Зрение — GLM-4.6V (Z.ai), поиск — Z.ai Web Search. Слух (Gemini 2.5 Flash) и рисование (Flux, GPT Image,
   Seedream) — через anymodel.org. Голос — ElevenLabs v3 через OpenRouter.
 - **Инструменты** ([agent/scripts/](agent/scripts/)), 42: своя папка — `read_file`, `list_dir`, `write_file`;

@@ -8,6 +8,7 @@
     song.py comment <номер комментария> <путь> ["<подпись>"] [--cover <путь к картинке>]
     song.py release <путь к песне> "<подпись>" [--cover <путь или описание>] [--start с] [--seconds с]
     song.py lyrics <номер сообщения в обсуждении> <путь к песне>
+    song.py clone <образец 15–30 с> ["<описание>"]   клон голоса на своём аккаунте Mureka ($5), печатает vocal_id
 
 make — песня через Mureka (шлюз NanoGPT, ключ LLM_API_KEY): текст в разметке [Verse] / [Chorus], звук — пара фраз
 по-английски (жанр, инструменты, темп). Голос — свой клон (MUREKA_VOCAL_ID в secrets.env, модель mureka/api/generate/song);
@@ -29,7 +30,7 @@ lyrics — текст песни из songs.jsonl комментарием по�
 import html, json, re, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request, uuid
 from pathlib import Path
 from _common import DRY, HOME, ROOT, STATE, append_jsonl, md_caption, now, plain_caption, read_jsonl, secrets, tg_link
-import draw
+import draw, mureka_api
 
 SONGS_DIR = HOME / "media" / "songs"
 COVERS_DIR = HOME / "media" / "covers"
@@ -127,10 +128,10 @@ def make(title, sound, lyrics, cover=""):
     if len(cover) > COVER_MAX:
         fail(f"описание обложки длиннее {COVER_MAX} знаков — одна картинка, коротко")
     t, started = now(), time.monotonic()
-    today = [s for s in songbook() if s.get("path") and s.get("at", "")[:10] == t.date().isoformat()]   # только сочинённые
-    limit = setting("SONG_DAILY_LIMIT", 3)
+    today = {s.get("run") or s.get("path") for s in songbook() if s.get("path") and s.get("at", "")[:10] == t.date().isoformat()}
+    limit = setting("SONG_DAILY_LIMIT", 3)               # заказов в сутки; заказ напрямую — два дубля
     if len(today) >= limit:
-        fail(f"сегодня уже {len(today)} песен из {limit} — следующая завтра")
+        fail(f"сегодня уже {len(today)} заказов песен из {limit} — следующий завтра")
     SONGS_DIR.mkdir(parents=True, exist_ok=True)
     out = SONGS_DIR / f"{t:%Y-%m-%d_%H%M}_{slug(title)}.mp3"
     if DRY:
@@ -150,52 +151,91 @@ def make(title, sound, lyrics, cover=""):
     painter = threading.Thread(target=paint, daemon=True)
     if cover:
         painter.start()
-    vocal = secrets().get("MUREKA_VOCAL_ID")
-    model, cost = (VOICE_MODEL, VOICE_COST) if vocal else (MODEL, COST)
     style = f"{sound.rstrip(' .')}. {SOLO}"
-    body = {"model": model, "input": style, "prompt": style, "lyrics": lyrics, "response_format": "mp3"}
-    if vocal:
-        body["vocal_id"] = vocal
-    job = nano("POST", f"{API}/v1/audio/speech", body)
-    run = job.get("runId")
-    if not run:
-        fail(f"NanoGPT не дал номер заказа: {json.dumps(job, ensure_ascii=False)[:200]}")
-    q = urllib.parse.urlencode({"runId": run, "model": model, "cost": job.get("cost", cost),
-                                "paymentSource": job.get("paymentSource", "USD"), "isApiRequest": "true"})
-    for _ in range(40):
-        time.sleep(10)
-        st = nano("GET", f"{API}/tts/status?{q}")
-        if st.get("status") == "completed" and st.get("audioUrl"):
-            with urllib.request.urlopen(urllib.request.Request(st["audioUrl"], headers={"User-Agent": UA}), timeout=120) as r:
+    s_ = secrets()
+    if s_.get("MUREKA_API_KEY"):                          # напрямую: $0.15 за песню, два дубля, строки с таймкодами
+        vocal, model = s_.get("MUREKA_DIRECT_VOCAL_ID", ""), "mureka-9.5"
+        n = setting("SONG_TAKES", 2)
+        try:
+            run = mureka_api.generate(lyrics, style, vocal_id=vocal, n=n, model=model)
+            choices = mureka_api.wait(run, limit=420)
+        except mureka_api.MurekaError as e:
+            fail(str(e))
+        takes = []
+        for i, ch in enumerate(choices, 1):
+            url = ch.get("url") or ch.get("flac_url") or ch.get("wav_url")
+            if not url:
+                continue
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=180) as r:
                 raw = r.read()
-            break
-        if st.get("status") == "error":
-            fail(f"Mureka не спела: {st.get('error') or st.get('code') or st}")
-    else:
-        fail(f"песня не готова за 7 минут; заказ {run}")
-    full = out.with_suffix(".full.mp3")
-    full.write_bytes(raw)
-    seconds, cut = seconds_of(full), setting("SONG_MAX_SECONDS", 150)   # 16 строк Mureka поёт за 85–105 с, с концовкой
-    if seconds > cut:
-        ffmpeg("-i", full, "-t", cut, "-af", f"afade=t=out:st={cut - 4}:d=4", "-b:a", "192k", out)
-        seconds = cut
-    else:
-        full.rename(out)
-    if cover:                         # весь make укладывается в 8 минут, которые даёт ему цикл
-        painter.join(timeout=max(5, min(240, 450 - (time.monotonic() - started))))
+            takes.append((raw, mureka_api.lines_of(ch)))
+        if not takes:
+            fail(f"Mureka вернула задачу {run} без песен")
+        cost, voice = mureka_api.SONG_PRICE.get(model, 0.15), vocal or "по умолчанию"
+    else:                                                 # NanoGPT: одна песня, $0.5 своим голосом
+        vocal = s_.get("MUREKA_VOCAL_ID")
+        model, cost = (VOICE_MODEL, VOICE_COST) if vocal else (MODEL, COST)
+        body = {"model": model, "input": style, "prompt": style, "lyrics": lyrics, "response_format": "mp3"}
+        if vocal:
+            body["vocal_id"] = vocal
+        job = nano("POST", f"{API}/v1/audio/speech", body)
+        run = job.get("runId")
+        if not run:
+            fail(f"NanoGPT не дал номер заказа: {json.dumps(job, ensure_ascii=False)[:200]}")
+        q = urllib.parse.urlencode({"runId": run, "model": model, "cost": job.get("cost", cost),
+                                    "paymentSource": job.get("paymentSource", "USD"), "isApiRequest": "true"})
+        for _ in range(40):
+            time.sleep(10)
+            st = nano("GET", f"{API}/tts/status?{q}")
+            if st.get("status") == "completed" and st.get("audioUrl"):
+                with urllib.request.urlopen(urllib.request.Request(st["audioUrl"], headers={"User-Agent": UA}), timeout=120) as r:
+                    takes = [(r.read(), [])]
+                break
+            if st.get("status") == "error":
+                fail(f"Mureka не спела: {st.get('error') or st.get('code') or st}")
+        else:
+            fail(f"песня не готова за 7 минут; заказ {run}")
+        voice = vocal or "по умолчанию"
+    if cover:                         # весь make укладывается во время, которое даёт ему цикл
+        painter.join(timeout=max(5, min(240, 540 - (time.monotonic() - started))))
         if not art["path"] and not art["error"]:
             art["error"] = "художник не успел"
-    entry = {"at": t.isoformat(timespec="seconds"), "title": title, "sound": sound, "lyrics": lyrics,
-             "path": rel(out), "seconds": round(seconds), "cost": job.get("cost", cost), "run": run,
-             "voice": vocal or "по умолчанию", "style": style}
-    if art["path"]:
-        entry.update(cover=rel(art["path"]), cover_prompt=cover)
-    append_jsonl(SONGS, entry)
+    cut, made = setting("SONG_MAX_SECONDS", 150), []   # 16 строк Mureka поёт за 85–105 с, с концовкой
+    for i, (raw, lines) in enumerate(takes, 1):
+        path = out if len(takes) == 1 else out.with_name(f"{out.stem}_дубль{i}.mp3")
+        full = path.with_suffix(".full.mp3")
+        full.write_bytes(raw)
+        is_mp3 = raw[:3] == b"ID3" or raw[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2")
+        seconds = seconds_of(full)
+        if seconds > cut:                                 # длинную режем с затуханием, полная остаётся рядом
+            ffmpeg("-i", full, "-t", cut, "-af", f"afade=t=out:st={cut - 4}:d=4", "-b:a", "192k", path)
+            seconds = cut
+        elif not is_mp3:                                  # пришёл flac или wav — в mp3
+            ffmpeg("-i", full, "-b:a", "192k", path)
+            full.unlink()
+        else:
+            full.rename(path)
+        if lines:                                         # строки как их спели — для субтитров сниппета
+            path.with_suffix(".lines.json").write_text(json.dumps(lines, ensure_ascii=False), encoding="utf-8")
+        entry = {"at": t.isoformat(timespec="seconds"), "title": title, "sound": sound, "lyrics": lyrics,
+                 "path": rel(path), "seconds": round(seconds), "cost": cost, "run": run, "voice": voice, "style": style}
+        if len(takes) > 1:
+            entry.update(take=i, takes=len(takes))
+        if art["path"]:
+            entry.update(cover=rel(art["path"]), cover_prompt=cover)
+        append_jsonl(SONGS, entry)
+        made.append((path, seconds))
     drawn = (f" Обложка: {rel(art['path'])} — выйдет вместе с треком." if art["path"] else
              f" Обложки нет ({art['error']}): можно нарисовать draw и отдать post_song в cover.")
-    print(f"песня «{title}» готова: {rel(out)}, {seconds:.0f} с, ${job.get('cost', cost)}"
-          f"{', своим голосом' if vocal else ''}.{drawn} "
-          f"Послушать — listen, выпустить — post_song, кусок на затравку — song_snippet.")
+    if len(made) == 1:
+        print(f"песня «{title}» готова: {rel(made[0][0])}, {made[0][1]:.0f} с, ${cost}"
+              f"{', своим голосом' if voice != 'по умолчанию' else ''}.{drawn} "
+              f"Послушать — listen, выпустить — release, кусок на затравку — song_snippet.")
+    else:
+        listing = "; ".join(f"дубль {i}: {rel(pth)}, {sec:.0f} с" for i, (pth, sec) in enumerate(made, 1))
+        print(f"песня «{title}» — {len(made)} дубля по ${cost}{', своим голосом' if voice != 'по умолчанию' else ''}: "
+              f"{listing}.{drawn} Послушай оба (listen) и выпусти лучший (release с путём дубля); "
+              f"остальные остаются черновиками.")
 
 def snippet(path_arg, length=25.0, start=None):
     src = local(path_arg)
@@ -346,7 +386,13 @@ def snippet_video(src, cover, start, length, title, tmp):
     Не вышло — статичная обложка с тем же куском, чтобы релиз не падал."""
     clip, lines, lyr = tmp / "snippet.mp4", tmp / "lines.json", song_entry(src).get("lyrics") or ""
     here = Path(__file__).with_name
-    if lyr:
+    exact = src.with_suffix(".lines.json")                # таймкоды строк от самой Mureka — точнее Whisper
+    if exact.exists():
+        rows = json.loads(exact.read_text(encoding="utf-8"))
+        subs = [{"line": r["line"], "start": round(r["start"] - start, 2), "end": round(r["end"] - start, 2)}
+                for r in rows if r["end"] > start + 0.2 and r["start"] < start + length - 0.2]
+        lines.write_text(json.dumps(subs, ensure_ascii=False), encoding="utf-8")
+    elif lyr:
         (tmp / "lyrics.txt").write_text(lyr, encoding="utf-8")
         try:
             r = subprocess.run([ears_python(), str(here("_align.py")), str(src), str(tmp / "lyrics.txt"),
@@ -546,6 +592,12 @@ def main():
         snippet(a[1], a[2] if len(a) > 2 and a[2] else 25, a[3] if len(a) > 3 else None)
     elif cmd == "channel" and len(a) >= 2:
         send("channel", None, a[1], a[2] if len(a) > 2 else "", cover)
+    elif cmd == "clone" and len(a) >= 2:
+        try:
+            print("vocal_id:", mureka_api.clone(local(a[1]) if not Path(a[1]).is_absolute() else Path(a[1]),
+                                                a[2] if len(a) > 2 else "Лютик"))
+        except mureka_api.MurekaError as e:
+            fail(str(e))
     elif cmd == "lyrics" and len(a) >= 3:
         lyrics_comment(a[1], a[2])
     elif cmd == "release" and len(a) >= 3:

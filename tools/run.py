@@ -116,7 +116,8 @@ TOOLS = [
        melody=("string", "ноты или аккорды, как у lute; без мелодии — перебор в тональности или Am–F–C–G"),
        key=("string", "тональность для аккомпанемента"), bpm=("integer", "темп"),
        caption=("string", "подпись"), chat=("integer", "номер чата, если в личку"), comment=("integer", "номер комментария, если в ветку")),
-    fn("song", "Сочинить песню с настоящим вокалом и музыкой: генерация идёт минуту-две, песня — полторы минуты с концовкой. "
+    fn("song", "Сочинить песню с настоящим вокалом и музыкой: генерация идёт минуту-две, песня — полторы минуты с концовкой; "
+       "приходит двумя дублями — послушай оба и выпусти лучший, остальные остаются черновиками. "
        "Текст — куплет и припев в разметке [Verse] / [Chorus], до 16 строк; скобки из текста вырезаются — их модель "
        "поёт вторым голосом. Звук — пара фраз по-английски: жанр, инструменты, темп; поёшь ты один, и это "
        "дописывается к звуку само. Обложка рисуется, пока поётся песня, и выходит вместе с треком. Каждая песня стоит "
@@ -445,7 +446,7 @@ def call_tool(name, args, dry):
             return script("voice", "channel", *tail, dry=dry, timeout=240)
         if name == "song":
             return script("song", "make", args["title"], args["sound"], args["lyrics"],
-                          "--cover", args.get("cover") or "", dry=dry, timeout=480)
+                          "--cover", args.get("cover") or "", dry=dry, timeout=600)
         if name == "song_snippet":
             return script("song", "snippet", args["path"], args.get("seconds") or "", args.get("start") or "", dry=dry)
         if name == "release":
