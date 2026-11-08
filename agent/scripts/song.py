@@ -157,7 +157,7 @@ def make(title, sound, lyrics, cover=""):
         vocal, model = s_.get("MUREKA_DIRECT_VOCAL_ID", ""), "mureka-9.5"
         n = setting("SONG_TAKES", 2)
         try:
-            run = mureka_api.generate(lyrics, style, vocal_id=vocal, n=n, model=model)
+            run = mureka_api.generate(lyrics, style, vocal_id=vocal, n=n, model=model, gender="" if vocal else "male")
             choices = mureka_api.wait(run, limit=420)
         except mureka_api.MurekaError as e:
             fail(str(e))

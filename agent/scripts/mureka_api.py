@@ -50,7 +50,8 @@ def _call(method, path, body=None, form=None, timeout=120):
         raise MurekaError(f"нет связи с Mureka: {getattr(e, 'reason', e)}")
 
 def generate(lyrics, prompt="", vocal_id="", melody_id="", n=2, model="mureka-9.5", gender=""):
-    """Заказ песни; возвращает номер задачи. melody_id ни с чем не совмещается (так в документации)."""
+    """Заказ песни; возвращает номер задачи. melody_id ни с чем не совмещается (так в документации) и русский
+    текст не берёт: 400 «melody_id is not supported under the language of the input lyrics» (проба 8.11)."""
     body = {"lyrics": lyrics, "model": model, "n": n}
     if melody_id:
         body["melody_id"] = melody_id
