@@ -4,6 +4,7 @@
     studio.py check <путь к песне>                                   придирчивое прослушивание по замыслу
     studio.py edit <путь> <с какой секунды> <по какую> "<текст участка>"   переделать кусок 10–30 с ($0.1)
     studio.py remix <путь> "<звук: жанр, инструменты>"               тот же текст, другой звук ($0.2)
+    studio.py rejudge <путь> "<почему>"                              перепроверить по прошлому разбору Mureka, бесплатно
 
 check слушает тремя способами и сверяет с замыслом песни (want — что должно быть, avoid — чего нельзя, из song;
 хор, женский голос и завывания проверяются всегда — он поёт один). Судья — разбор самой Mureka (/v1/song/describe,
@@ -33,12 +34,13 @@ EARS = Path(__file__).with_name("_listen.py")
 # что уши называют по-разному: основы слов для замысла (по-русски), разбора Mureka (англ. метки) и ответа Gemini;
 # ищутся с начала слова — иначе «хор» находится в «хорошо», а «oud» в «loud»
 KINDS = {
-    "барабаны": r"drum|percussion|барабан|ударн",
+    "барабаны": r"drum|барабан|ударн",
+    "перкуссия": r"percussion|clang|chime|bell|found.object|перкусс|заслонк|бутыл|ложк|бубен|трещотк|колокол",
     "синтезатор": r"synth|electronic|синт|электрон",
     "гармонь": r"accordion|bayan|garmon|аккордеон|гармон(?!ич)|баян",
     "хор и бэк-вокал": r"backing vocal|choir|choral|vocal harmon|harmonies|бэк|хор(?!ош)|подпев",
     "женский голос": r"female|женск",
-    "рэп": r"rap\b|hip.?hop|рэп|речитатив",
+    "рэп": r"rap\b|hip.?hop|рэп",              # «куплет почти речитатив» у барда — не рэп (9.11: ложное «нужно»)
     "поп": r"pop\b|поп\b|попс|эстрад|dance",
     "шансон": r"chanson|шансон",
     "электрогитара": r"electric guitar|distort|электрогитар|перегруз",
@@ -50,7 +52,7 @@ KINDS = {
     "клавишные": r"piano|keys|organ|harpsichord|рояль|пианин|фортепиан|орган|клавесин|клавиш",
     "духовые": r"brass|trumpet|flute|horn|sax|clarinet|whistle|флейт|саксоф|кларнет|духов|свирел|рожок",
 }
-INSTRUMENT_KINDS = {"барабаны", "синтезатор", "гармонь", "электрогитара", "щипковая акустика", "бас", "смычковые",
+INSTRUMENT_KINDS = {"барабаны", "перкуссия", "синтезатор", "гармонь", "электрогитара", "щипковая акустика", "бас", "смычковые",
                     "клавишные", "духовые"}
 VOICE = re.compile(r"(?i)vocal|voice|choir|singer")
 # так Mureka называет надрыв в голосе. Это не брак, а манера: ухо Вовы 8.11 — у чистых дублей «Warm, Intimate» голос
@@ -123,25 +125,45 @@ def measure(path):
     lines = [l.strip() for l in r.stdout.splitlines() if l.strip().startswith(("Темп", "Громкость", "Разброс"))]
     return " ".join(lines)[:400]
 
+NEG = re.compile(r"(?i)(?<!\w)(без|никаких|никакого|никакой|ни|нет|не|no|without|кроме|except)(?!\w)")
+INSTEAD = re.compile(r"(?i)(?<!\w)(?:вместо|instead of)\s+([^—,;:]+)")
+
 def split_intent(want, avoid):
-    """«без барабанов» и «никаких синтов» в замысле — это «нельзя», а не «нужно»."""
+    """Запрет действует до конца фразы: «Никаких барабанов, синтезаторов, хора» — всё в «нельзя»;
+    «вместо барабанов — заслонка» — барабаны в «нельзя», заслонка в «нужно» (9.11: резал по запятым — хор и синт
+    попадали в «нужно»)."""
     yes, no = [], [avoid] if avoid else []
-    for part in re.split(r"[,;.\n]", want or ""):
-        part = part.strip()
-        if re.match(r"(?i)(без|никаких|ни\s|не\s|нет\s|no\s|without\s)", part):
-            no.append(part)
-        elif part:
-            yes.append(part)
+    for sent in re.split(r"[.;!\n]+", want or ""):
+        no += [m.group(1).strip() for m in INSTEAD.finditer(sent)]
+        sent = INSTEAD.sub(" ", sent)
+        m = NEG.search(sent)
+        if m:
+            no.append(sent[m.start():].strip())
+            sent = sent[:m.start()]
+        if sent.strip(" ,—-:"):
+            yes.append(sent.strip(" ,—-:"))
     return ", ".join(yes), ", ".join(no)
 
+MOODS = {"спокойно"}
+
 def plan(want, avoid):
-    """Что проверять: виды «нужно», виды «нельзя» (с теми, что всегда), и пункты замысла своими словами."""
-    w_kinds = kinds_in(want)
+    """Что проверять: виды «нужно» в порядке замысла (первый инструмент — ведущий), виды «нельзя» (с теми, что всегда),
+    и пункты замысла своими словами."""
+    pos = lambda k: re.search(r"(?<!\w)(?:" + KINDS[k] + ")", want, re.I).start()
+    w_kinds = sorted(kinds_in(want), key=pos)
     a_kinds = [k for k in dict.fromkeys(kinds_in(avoid) + ALWAYS_AVOID) if k not in w_kinds]
     free = [x.strip() for x in re.split(r"[,;]", want) if x.strip() and not kinds_in(x)][:4]
     return w_kinds, a_kinds, free
 
-def judge(d, g, w_kinds, a_kinds, free):
+GENERIC = {"acoustic", "electric", "electronic", "soft", "warm", "lead", "main", "solo", "clean", "light", "deep", "low", "high"}
+
+def named_in(entry, text):
+    """Инструмент назван в описании звука своим словом («Hurdy-Gurdy» — «hurdy-gurdy drone»); «no bass» не в счёт."""
+    words = [w for w in re.sub(r"\(.*?\)", " ", entry.lower()).split() if w not in GENERIC]
+    stem = re.sub(r"(?<=[^s])s$", "", words[0]) if words else ""      # drums → drum; bass остаётся bass
+    return bool(stem) and bool(re.search(r"(?<!\w)" + re.escape(stem), NEGATED.sub(" ", text or "").lower()))
+
+def judge(d, g, w_kinds, a_kinds, free, sound=""):
     """Решает разбор Mureka; Gemini — где именно, и сомнения там, где Mureka молчит.
     Сверка с замыслом, а не только чёрный список: когда в замысле названы инструменты, любой другой — лишний;
     при «спокойно» — без громкого настроения; надрыв в голосе — в сомнительное, как манера, а не брак."""
@@ -153,11 +175,15 @@ def judge(d, g, w_kinds, a_kinds, free):
             confirmed.append(f"{k}{f' ({where})' if ge and where else ''}")
         elif ge:
             doubtful.append(f"{k} — слышит только Gemini{f' ({where})' if where else ''}")
-    missing = [k for k in w_kinds if not heard_by_mureka(k, d)]
+    unheard = [k for k in w_kinds if not heard_by_mureka(k, d)]
     named = [k for k in w_kinds if k in INSTRUMENT_KINDS]
+    lead = named[0] if named else None                    # без ведущего инструмента или настроения — брак;
+    missing = [k for k in unheard if k == lead or k in MOODS]   # второстепенное Mureka может просто не подписать (9.11: заслонка)
+    doubtful += [f"{k} — в замысле есть, Mureka не слышит" for k in unheard if k not in missing]
     played = [str(x) for x in d.get("instrument") or [] if not VOICE.search(str(x))]
     if named:                                             # замысел назвал инструменты — остальные лишние
-        extra = [x for x in played if not any(has(k, x) for k in named) and not any(has(k, x) for k in a_kinds)]
+        extra = [x for x in played if not any(has(k, x) for k in named) and not any(has(k, x) for k in a_kinds)
+                 and not named_in(x, sound)]
         if extra:
             confirmed.append("лишнее: " + ", ".join(extra))
     strain = sorted({m.group(1).capitalize() for x in d.get("instrument") or [] if VOICE.search(str(x))
@@ -196,7 +222,7 @@ def check(path_arg):
         fail(f"разбор Mureka не ответил: {err}")
     w_kinds, a_kinds, free = plan(want, avoid)
     g = gemini(src, [f"{k} (нужно)" for k in w_kinds] + [f"{k} (нельзя)" for k in a_kinds] + free, measured)
-    confirmed, missing, doubtful = judge(d, g, w_kinds, a_kinds, free)
+    confirmed, missing, doubtful = judge(d, g, w_kinds, a_kinds, free, e.get("sound") or "")
     verdict = "годно" if not confirmed and not missing else "править"
     rec = {"at": now().isoformat(timespec="seconds"), "title": title, "checked": song.rel(src), "verdict": verdict,
            "confirmed": confirmed, "missing": missing, "doubtful": doubtful, "cost": DESCRIBE_COST,
@@ -225,6 +251,24 @@ def check(path_arg):
     print("\n".join(lines))
     drafts.post(f"<b>«{drafts.esc(title)}»</b> · {drafts.esc(src.stem.split('_')[-1])} — проверка: <b>{verdict}</b>\n"
                 + drafts.esc("\n".join(lines[1:3] if verdict == "править" else lines[1:2])))
+
+def rejudge(path_arg, why):
+    """Новые правила судьи — по прошлому разбору Mureka той же записи, без новой оплаты."""
+    src = song.local(path_arg)
+    last = song.last_check(src)
+    if not last.get("mureka"):
+        fail("у записи нет прошлой проверки с разбором Mureka — нужна song_check")
+    e = song.song_entry(src)
+    want, avoid = split_intent((e.get("want") or "").strip(), (e.get("avoid") or "").strip())
+    if not want and not avoid:
+        want = e.get("sound") or ""
+    w_kinds, a_kinds, free = plan(want, avoid)
+    confirmed, missing, doubtful = judge(last["mureka"], last.get("gemini") or {}, w_kinds, a_kinds, free, e.get("sound") or "")
+    verdict = "годно" if not confirmed and not missing else "править"
+    append_jsonl(song.SONGS, {"at": now().isoformat(timespec="seconds"), "title": last.get("title"), "checked": song.rel(src),
+                              "verdict": verdict, "confirmed": confirmed, "missing": missing, "doubtful": doubtful, "cost": 0,
+                              "mureka": last["mureka"], "gemini": last.get("gemini"), "rejudged": why, "of_check": last.get("at")})
+    print(f"{src.name}: было «{last.get('verdict')}», стало «{verdict}» — " + "; ".join(confirmed + [f"нет: {m}" for m in missing]))
 
 def version_path(src, kind):
     n = 1
@@ -348,7 +392,13 @@ def remix(path_arg, sound):
     try:
         body = {"prompt": prompt, "lyrics": e.get("lyrics") or "", "model": "mureka-9.5",
                 **source_id(e, src, "remix")}
-        ch = mureka_api.wait(mureka_api._call("POST", "/v1/song/remix", body)["id"], limit=420)[0]
+        try:
+            task = mureka_api._call("POST", "/v1/song/remix", body)
+        except mureka_api.MurekaError as err:           # 9.11: «The mureka-9.5 model is not supported for this user» —
+            if "not supported for this user" not in str(err):   # ремикс на 9.5 закрыт нашему тарифу, на mureka-8 открыт
+                raise
+            task = mureka_api._call("POST", "/v1/song/remix", {**body, "model": "mureka-8"})
+        ch = mureka_api.wait(task["id"], limit=420)[0]
     except (mureka_api.MurekaError, IndexError, KeyError) as err:
         fail(f"ремикс не вышел: {err}")
     out = keep_version(src, e, ch, "ремикс", {"remix_of": song.rel(src), "sound": sound}, REMIX_COST, e.get("lyrics") or "")
@@ -365,6 +415,8 @@ def main():
         edit(a[1], a[2], a[3], a[4])
     elif a[:1] == ["remix"] and len(a) >= 3:
         remix(a[1], a[2])
+    elif a[:1] == ["rejudge"] and len(a) >= 3:
+        rejudge(a[1], a[2])
     else:
         print(__doc__)
         sys.exit(1)
