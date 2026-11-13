@@ -30,6 +30,8 @@ from _common import DRY, append_jsonl, now, read_jsonl, secrets
 import drafts, listen, mureka_api, song
 
 DESCRIBE_COST, EDIT_COST, REMIX_COST = 0.1, 0.1, 0.2
+if mureka_api.backend() == "fal":     # на fal ремикс 9.5 — $0.5 (прайс fal 14.11); vocal_id ремикс не берёт —
+    REMIX_COST = 0.5                  # голос клона в ремиксе не гарантирован
 EARS = Path(__file__).with_name("_listen.py")
 # что уши называют по-разному: основы слов для замысла (по-русски), разбора Mureka (англ. метки) и ответа Gemini;
 # ищутся с начала слова — иначе «хор» находится в «хорошо», а «oud» в «loud»
@@ -381,6 +383,9 @@ def remix(path_arg, sound):
     title, sound = e.get("title") or src.stem, (sound or "").strip()
     if not sound:
         fail("нужен звук ремикса: жанр, инструменты, темп")
+    if mureka_api.backend() == "fal" and secrets().get("MUREKA_DIRECT_VOCAL_ID"):
+        fail("ремикс на fal голос клона не держит (vocal_id не принимает) и стоит $0.5 — "
+             "нужен другой звук или темп: закажи песню заново (song), голос останется твоим")
     if DRY:
         print(f"[сухой прогон] «{title}»: ремикс не заказывал")
         return
