@@ -176,7 +176,7 @@ def make(title, sound, lyrics, cover="", want="", avoid="", draft=False):
     if len(style) > PROMPT_MAX:
         fail(f"звук {len(sound)} знаков — Mureka берёт до {PROMPT_MAX - len(SOLO) - 2}, сожми")
     s_ = secrets()
-    if s_.get("MUREKA_API_KEY"):                          # напрямую: $0.15 за песню, два дубля, строки с таймкодами
+    if s_.get("MUREKA_API_KEY") or s_.get("FAL_KEY"):     # Mureka напрямую или через fal: $0.15 за песню, строки с таймкодами
         vocal, model = s_.get("MUREKA_DIRECT_VOCAL_ID", ""), ("mureka-9" if draft else "mureka-9.5")
         n = setting("SONG_TAKES", 2)
         problem = budget_block(title, mureka_api.SONG_PRICE.get(model, 0.15) * n)

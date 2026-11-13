@@ -342,8 +342,9 @@ def keep_version(src, e, ch, kind, extra, cost, lyrics):
     return out
 
 def source_id(e, src, purpose):
-    if e.get("mureka_id"):
-        return {"song_id": e["mureka_id"]}
+    mid = e.get("mureka_id") or ""          # номер песни старого аккаунта Mureka fal не примет — тогда грузим файл
+    if mid and (mureka_api.backend() != "fal" or mid.startswith(mureka_api.FAL_SONG)):
+        return {"song_id": mid}
     return {"upload_audio_id": mureka_api.upload(src, purpose)}
 
 def edit(path_arg, start, end, text):
