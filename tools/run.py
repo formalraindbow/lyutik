@@ -47,6 +47,8 @@ POLLS = LOCKED / "polls.json"        # его опросы: голоса обн�
 MEDIA_IN = HOME / "media" / "in"     # фото от людей из лички и комментариев; смотреть — инструментом look
 
 
+REPLY_TEXT = "сообщение в чат: фраза-две, как пишут в мессенджере; длинно — только байка или куплет"
+
 def fn(tool, desc, optional=(), **props):
     return {"type": "function", "function": {"name": tool, "description": desc, "parameters": {
         "type": "object", "required": [k for k in props if k not in optional],
@@ -190,9 +192,9 @@ TOOLS = [
     fn("ticket", "Сообщить разработчику, что чего-то не хватает или что-то сломалось.",
        text=("string", "что нужно или что сломалось, чего ждал и что вышло на деле")),
     fn("reply", "Ответить человеку в личку Telegram. Номер чата приходит вместе с его сообщением.",
-       chat=("integer", "номер чата"), text=("string", "текст ответа")),
+       chat=("integer", "номер чата"), text=("string", REPLY_TEXT)),
     fn("reply_comment", "Ответить на комментарий под постом канала — ответ встанет в ту же ветку обсуждения.",
-       comment=("integer", "номер комментария"), text=("string", "текст ответа")),
+       comment=("integer", "номер комментария"), text=("string", REPLY_TEXT)),
     fn("comments", "Перечитать, что уже говорили в комментариях: под одним постом или последние вообще.",
        optional=("post",), post=("integer", "номер поста в канале")),
     fn("dms", "Перечитать личку: что человек писал и что ты отвечал — по одному чату или последние по всем.",
@@ -231,51 +233,12 @@ def script(name, *args, dry, timeout=120):
     out = (r.stdout + r.stderr).strip()
     return out if r.returncode == 0 else f"ошибка (код {r.returncode}): {out}"
 
-# ── кулисы: как он сейчас настроен ответить и что не выпустить к людям ─────────
-# Ход на каждое сообщение бросает код, а не модель: правило в промпте модель исполняла бы каждый раз одинаково.
-MOOD = LOCKED / "mood.json"
-STAGE = {}                 # ("chat", id) | ("comment", id) -> {"move", "max", "tries"}
-INSULT = re.compile(r"(?i)(говн|хуйн|хуев|отстой|бездар|тупо[йе]|лох|заткн|бред|кринж|отвратит|позор)")
-PRAISE = re.compile(r"(?i)(круто|класс|огонь|шикарн|охуенн|люблю тво|лучш|браво|красиво|кайф)")
-SONG = re.compile(r"(?i)(спой|сыграй|напиши песн|сочини|песн[юи] (про|о|для|мне)|баллад[уы] (про|о|для))")
-MOVES = {
-    "snap": ("огрызнись одной строкой, грубо и смешно", 140),
-    "flip": ("переверни его ход в свою пользу, одна-две фразы", 260),
-    "show": ("выступи: байка, хвастовство или куплет, тут можно длинно", 900),
-    "price": ("назови цену за песню", 220),
-    "cut": ("скажи, что скучно, и уведи разговор туда, куда хочешь ты, одной фразой", 160),
-    "warm": ("внезапно потеплей, коротко и без подколов", 200),
-    "mute": ("промолчи: ответа нет", 0),
-}
-
-def mood():
-    """Настроение от -1 до 1: блуждает от сессии к сессии, хранится в state/mood.json."""
-    try:
-        m = float(json.loads(MOOD.read_text())["mood"])
-    except (OSError, ValueError, KeyError, TypeError):
-        m = 0.2
-    return m
-
-def drift_mood():
-    m = max(-1.0, min(1.0, mood() * 0.7 + random.gauss(0, 0.45)))
-    try:
-        MOOD.write_text(json.dumps({"mood": round(m, 2), "at": datetime.datetime.now().isoformat(timespec="seconds")}))
-    except OSError:
-        pass
-    return m
-
-def recent_from(chat, hours=6):
-    """Сколько человек написал за последние часы: терпение не бесконечно."""
-    since = (datetime.datetime.now() - datetime.timedelta(hours=hours)).isoformat()
-    n = 0
-    try:
-        for line in (LOCKED / "dialogs.jsonl").read_text(encoding="utf-8").splitlines():
-            d = json.loads(line)
-            if d.get("dir") == "in" and str(d.get("chat")) == str(chat) and d.get("at", "") >= since:
-                n += 1
-    except (OSError, ValueError):
-        pass
-    return n
+# ── перед выходом к людям ─────────────────────────────────────────────────────
+# Ходов по костям («огрызнись», «переверни его ход») и сторожа стиля у ответов нет с 14.11. Замер на перепалке
+# 12.11: подсказка «переверни» выпадала в половине случаев, и 7 ответов из 10 вышли одной схемой — переворот слов,
+# счёт заходов, ультиматум. Вова: «ограничения и скрипты — не то, как должен работать интеллект». Манеру держат
+# ядро, образец здешней речи (SPEECH.md) и модель; длину — слово в описании reply. Сторож — только безопасность.
+REJECTS = {}               # ("chat", id) | ("comment", id) -> сколько раз сторож вернул ответ
 
 # Разнос чужой песни: хвалить ли и в какой форме — тоже кулисы. Промпт «хвалю редко» модель не держит:
 # замер 8.11 — похвала в 5 разносах из 5 и один скелет на всех (учёба/…/2026-11-08_лютик_разнос_проба.md).
@@ -305,37 +268,9 @@ def long_caption(caption):
     c = (caption or "").strip()
     return bool(c) and ("\n" in c or len(c) > 220 or len([x for x in re.split(r"(?<=[.!?…])\s+", c) if x.strip()]) > 2)
 
-def roll_move(text, chat, m):
-    w = {"flip": 4.0, "snap": 1.0, "show": 1.0, "cut": 0.8, "warm": 0.5, "mute": 0.4, "price": 0.0}
-    if INSULT.search(text):
-        w.update(snap=6.0, flip=2.5, mute=0.8, warm=0.1, show=0.3)
-    if PRAISE.search(text):
-        w.update(show=2.5, warm=1.0, snap=0.2)
-    if SONG.search(text):
-        w.update(price=4.0, show=2.0)
-    if len(text) < 12:
-        w.update(cut=w["cut"] + 1.0, mute=w["mute"] + 0.4)
-    tired = recent_from(chat)
-    if tired > 6:
-        w.update(cut=w["cut"] + 2.0, mute=w["mute"] + 1.5, show=w["show"] * 0.5)
-    if m < -0.4:
-        w.update(snap=w["snap"] * 1.8, cut=w["cut"] * 1.6, warm=w["warm"] * 0.3)
-    elif m > 0.4:
-        w.update(show=w["show"] * 1.6, warm=w["warm"] * 1.8, snap=w["snap"] * 0.6)
-    keys = list(w)
-    return random.choices(keys, weights=[w[k] for k in keys])[0]
-
-def stage_hint(kind, key, text, chat):
-    move = roll_move(text, chat, mood())
-    desc, limit = MOVES[move]
-    STAGE[(kind, str(key))] = {"move": move, "max": max(limit, 3 * len(text)) if move not in ("mute",) else 0, "tries": 0}
-    return f"    [за кулисами: {desc}]"
-
 POLITICS = re.compile(r"(?i)(\bсво\b|спецоперац|войн[аеуы]|фронт[аеу]?\b|мобилизац|путин|зеленск|кремл|госдум|выбор[ыа]? президент|нато\b|санкци|украин|донбас|херсон|бахмут|митинг|оппозиц)")
 KIDS = re.compile(r"(?i)(ребён|ребен|дет(и|ей|ям|ск)|школьни|малолет|несовершеннолет)")
 LEWD = re.compile(r"(?i)(трах|секс|ебл|выеб|сиськ|член\b|изнасил|порн|голы[йе])")
-SERVANT = re.compile(r"(?i)(поручени|докладыва|принял к исполнению|слушаюсь|как прикажете|как скажете|отчитыва)")
-SORRY = re.compile(r"(?i)(прошу прощени|извини(те)?\b|мне жаль|моя ошибка|каюсь|признаю,|честно говоря|по памяти|не дословно)")
 FOREIGN = re.compile(r"[぀-ヿ一-鿿가-힯]")
 
 def guard(text, kind=None, key=None):
@@ -348,15 +283,6 @@ def guard(text, kind=None, key=None):
         return "политика и война — болото, перепиши о своём"
     if KIDS.search(t) and LEWD.search(t):
         return "дети и похабщина рядом — перепиши"
-    if kind is None:
-        return ""
-    if SERVANT.search(t):
-        return "ты не на службе — перепиши без отчёта и поручений"
-    if SORRY.search(t):
-        return "без оправданий и извинений — перепиши"
-    st = STAGE.get((kind, str(key)))
-    if st and st["move"] != "show" and len(text) > max(st["max"], 120):
-        return f"длинно: {len(text)} знаков — сожми до {max(st['max'], 120)}"
     return ""
 
 
@@ -380,7 +306,7 @@ def call_tool(name, args, dry):
             p = resolve(args["path"])
             if HOME not in p.parents or p == LOCKED or LOCKED in p.parents:
                 return "запись запрещена: писать можно в agent/lyutik/, кроме state/ — туда пишут только инструменты"
-            if p.name in ("PERSONA.md", "SESSION_PROMPT.md") and p.parent == HOME:
+            if p.name in ("PERSONA.md", "SESSION_PROMPT.md", "SPEECH.md") and p.parent == HOME:
                 return "этот файл держит оператор: ты меняешься в memory/state.md"
             content = args.get("content") or ""
             if len(content) > WRITE_LIMIT:
@@ -501,10 +427,9 @@ def call_tool(name, args, dry):
             return script("ticket", args["text"], dry=dry)
         if name in ("reply", "reply_comment"):
             kind, key = ("chat", args["chat"]) if name == "reply" else ("comment", args["comment"])
-            st = STAGE.setdefault((kind, str(key)), {"move": "flip", "max": 260, "tries": 0})
             problem = guard(args["text"], kind, key)
-            if problem and st["tries"] < 2:
-                st["tries"] += 1
+            if problem and REJECTS.get((kind, str(key)), 0) < 2:
+                REJECTS[(kind, str(key))] = REJECTS.get((kind, str(key)), 0) + 1
                 return f"не отправлено: {problem}"
             if name == "reply":
                 return script("reply", args["chat"], args["text"], dry=dry)
@@ -907,14 +832,12 @@ def dm_text(msgs):
         lines.append("Тебе пишут в личку Telegram:")
         for m in dms:
             lines.append(f"— {who(m)}, чат {m['chat']}: «{m['text']}»")
-            lines.append(stage_hint("chat", m["chat"], m.get("text") or "", m.get("chat")))
         lines.append("Ответить в личку — reply с номером чата.")
     if cms:
         lines.append("Комментарии под постами твоего канала:")
         for m in cms:
             lines.append(f"— под постом {m.get('post_link') or 'неизвестно каким'}, комментарий №{m['message_id']} от {who(m)}"
                          + (f", ответ на №{m['reply_to']}" if m.get("reply_to") else "") + f": «{m['text']}»")
-            lines.append(stage_hint("comment", m["message_id"], m.get("text") or "", m.get("user_id") or m.get("chat")))
         lines.append("Ответить в комментариях — reply_comment с номером комментария; что уже говорили — comments.")
     return "\n".join(lines)
 
@@ -956,8 +879,6 @@ def session(model, dry, operator, wake, ears=None, pending=(), delivered=None):
     """delivered — всё от людей, что сессия показала модели: при сбое вернётся в ящик с пометкой «повтор»."""
     delivered = [] if delivered is None else delivered
     delivered[:] = list(pending)
-    if not dry:
-        drift_mood()
     log = Log(dry)
     started = time.time()
     for box in (OPERATOR, AT_WAKE):    # ящик: один раз, потом убирается с отметкой времени
@@ -1057,7 +978,8 @@ def nap(until, reason, ears=None):
 
 def brain_chain(s):
     """Звенья мозга по порядку: (имя, адрес, ключ, модель, запасная). Порядок и состав — BRAIN_ORDER в secrets.env
-    (по умолчанию GLM,ANYMODEL,LLM: Z.ai → anymodel → NanoGPT). Без ключа звена нет."""
+    (по умолчанию GLM,ANYMODEL,LLM: Z.ai → anymodel → NanoGPT). Без ключа звена нет. Модель звена — <ЗВЕНО>_BRAIN_MODEL,
+    можно несколько через запятую: они пробуются по порядку раньше следующего звена."""
     known = {
         "GLM": ("Z.ai", "GLM_", "glm-5.3", "glm-5.3-flash"),
         "ANYMODEL": ("anymodel", "ANYMODEL_", "glm/glm-5.3", "glm/glm-5.3-flash"),
@@ -1068,9 +990,12 @@ def brain_chain(s):
     chain = []
     for name, p, model, fallback in links:
         if s.get(p + "API_KEY") and s.get(p + "BASE_URL"):
-            chain.append((name, s[p + "BASE_URL"].rstrip("/") + "/chat/completions", s[p + "API_KEY"],
-                          s.get(p + "BRAIN_MODEL") or s.get(p + "MODEL") or model,
-                          s.get(p + "BRAIN_FALLBACK") or s.get(p + "FALLBACK_MODEL") or fallback))
+            url = s[p + "BASE_URL"].rstrip("/") + "/chat/completions"
+            models = [m.strip() for m in (s.get(p + "BRAIN_MODEL") or s.get(p + "MODEL") or model).split(",") if m.strip()]
+            spare = s.get(p + "BRAIN_FALLBACK") or s.get(p + "FALLBACK_MODEL") or fallback
+            for m in models:                       # несколько через запятую — по порядку: первая недоступна, думает вторая
+                chain.append((name if len(models) == 1 else f"{name} {m}", url, s[p + "API_KEY"], m,
+                              spare if len(models) == 1 else m))
     return chain
 
 

@@ -134,6 +134,10 @@ def compose(name, from_operator=None, wake=None, dry=False):
     add(read(AGENTS / "shared" / "rules.md"))
     add("\n=== КТО ТЫ ===\n")
     add(read(home / "PERSONA.md") or "(нет PERSONA.md)")
+    speech = read(home / "SPEECH.md")          # образец живой речи из чатов: лежит только на машине, в репо его нет
+    if speech:
+        add("")
+        add(speech)
     add("\n=== ЭТА СЕССИЯ ===\n")
     add(read(home / "SESSION_PROMPT.md") or "(нет SESSION_PROMPT.md)")
 
