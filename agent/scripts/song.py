@@ -55,6 +55,7 @@ MAX_LINES = 16
 # Только это: подача и аранжировка — в его описании звука. «plain direct delivery, sparse arrangement» здесь стояли
 # до 8.11 и делали голос ровным — ухо Вовы: «нет характера, монотонный добренький голос»
 SOLO = "solo male vocal, one voice only, no backing vocals, no choir, no harmonies, no vocal runs"
+CAPTION_MAX = 1000         # подпись к медиа: Telegram берёт 1024, запас на разметку
 PROMPT_MAX = 1024          # Mureka: описание звука до 1024 знаков (документация /v1/song/generate)
 
 
@@ -314,7 +315,9 @@ def tg_captioned(token, method, build, files):
         return tg(token, method, build(False), files)
 
 def with_caption(data, caption, rich):
-    cap = (caption or "").strip()[:1000]
+    cap = (caption or "").strip()
+    if len(cap) > CAPTION_MAX:
+        raise RuntimeError(f"подпись {len(cap)} знаков — Telegram берёт до 1024, обрезать молча нельзя")
     if not cap:
         return dict(data)
     return {**data, "caption": md_caption(cap), "parse_mode": "HTML"} if rich else {**data, "caption": plain_caption(cap)}
@@ -392,6 +395,21 @@ def lyrics_html(title, lyrics):
     if cur:
         blocks.append(cur)
     return f"<b>«{html.escape(title)}»</b>\n\n" + "\n\n".join("\n".join(b) for b in blocks)
+
+def lyrics_plain(lyrics):
+    """Текст для подписи к треку: без разметки [Verse]/[Chorus], куплеты через пустую строку."""
+    blocks, cur = [], []
+    for line in (lyrics or "").splitlines():
+        line = re.sub(r"^\s*\[[^\]]*\]\s*", "", line)          # [Verse] в начале строки — разметка, не слова
+        if not line.strip():
+            if cur:
+                blocks.append(cur)
+                cur = []
+            continue
+        cur.append(line.strip())
+    if cur:
+        blocks.append(cur)
+    return "\n\n".join("\n".join(b) for b in blocks)
 
 def discussion(token, channel):
     group = json.loads(urllib.request.urlopen(urllib.request.Request(
@@ -515,7 +533,7 @@ def release_block():
     return (f"прошлый релиз — {last:%d.%m %H:%M}, следующий не раньше {ready:%d.%m %H:%M}: между релизами "
             f"пишутся слова, пробуются дубли, выбирается лучший")
 
-def send(where, target, path_arg, caption="", cover_arg="", cover=None, lyrics=True):
+def send(where, target, path_arg, caption="", cover_arg="", cover=None, lyrics=True, words=False):
     src = local(path_arg)
     e = entry_for(src)
     title = e.get("title") or src.stem
@@ -543,6 +561,13 @@ def send(where, target, path_arg, caption="", cover_arg="", cover=None, lyrics=T
             note = ", с обложкой"
         except (RuntimeError, OSError) as err:
             cover, note = None, f", без обложки — не прицепилась: {str(err)[:120]}"
+    text_later = False
+    if words and not is_snippet:                    # трек релиза: полный текст прямо под песней, а не только у сниппета
+        plain = lyrics_plain(song_entry(src).get("lyrics"))
+        if plain and len(plain) <= CAPTION_MAX:
+            caption = plain
+        elif plain:
+            text_later = True                       # длиннее подписи — целиком комментарием под треком
     label = f"🎵 «{title}»" + (" — кусок" if is_snippet else "") + (f"\n{caption.strip()}" if caption.strip() else "")
     if where == "channel":
         if lyrics and not is_snippet and release_block():      # трек из release (lyrics=False) уже прошёл проверку
@@ -555,7 +580,7 @@ def send(where, target, path_arg, caption="", cover_arg="", cover=None, lyrics=T
                              "message_id": msg["message_id"], "format": "song", "seconds": int(seconds), "file": rel(src),
                              "cover": rel(cover) if cover else None})
         append_jsonl(SONGS, {"at": t.isoformat(timespec="seconds"), "title": title, "posted": link, "file": rel(src)})
-        if lyrics and not is_snippet:
+        if (lyrics or text_later) and not is_snippet:
             lyrics_later(msg["message_id"], src)
         print(f"выпущено в канал {t:%d.%m %H:%M}: «{title}», {seconds:.0f} с{note} — {link}")
         return link
@@ -592,8 +617,8 @@ def release(path_arg, caption, cover_arg="", start=None, length=None, despite=""
     title = entry_for(src).get("title") or src.stem
     if check_block(src, title, despite):
         fail(check_block(src, title, despite))
-    if len(caption) > 1024:
-        fail(f"подпись {len(caption)} знаков — Telegram берёт до 1024")
+    if len(caption) > CAPTION_MAX:
+        fail(f"подпись {len(caption)} знаков — Telegram берёт до 1024, с разметкой — до {CAPTION_MAX}")
     cover = resolve_cover(cover_arg, src, title)
     if not cover and not DRY:
         fail("у песни нет обложки: опиши её в cover — нарисую, или дай путь к картинке")
@@ -613,10 +638,14 @@ def release(path_arg, caption, cover_arg="", start=None, length=None, despite=""
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         thumb = tmp / "thumb.jpg"
-        ffmpeg("-i", cover, "-vf", square.format(320), "-q:v", 4, thumb)
         clip, how = snippet_video(src, cover, start, length, title, tmp)
+        vertical = how.startswith("в формате")
+        if vertical:            # квадратное превью телефон растягивает в рамку 9:16 — видео выглядит расплющенным
+            ffmpeg("-ss", f"{length * 0.6:.2f}", "-i", clip, "-frames:v", 1, "-vf", "scale=180:320", "-q:v", 4, thumb)
+        else:
+            ffmpeg("-i", cover, "-vf", square.format(320), "-q:v", 4, thumb)
         video = {"chat_id": channel, "video": "attach://clip", "thumbnail": "attach://thumb", "width": 1080,
-                 "height": 1920 if how.startswith("в формате") else 1080, "duration": int(round(length)),
+                 "height": 1920 if vertical else 1080, "duration": int(round(length)),
                  "supports_streaming": "true"}
         msg = tg_captioned(token, "sendVideo", lambda rich: with_caption(video, caption, rich),
                            {"clip": ("snippet.mp4", clip.read_bytes(), "video/mp4"),
@@ -632,7 +661,7 @@ def release(path_arg, caption, cover_arg="", start=None, length=None, despite=""
     lyrics_later(msg["message_id"], src)
     print(f"релиз «{title}» в канале {t:%d.%m %H:%M}: видео-сниппет {length:.0f} с с {start:.0f}-й секунды ({how}) — {link}; "
           f"текст песни повиснет в комментариях сам")
-    send("channel", None, path_arg, cover=cover, lyrics=False)
+    send("channel", None, path_arg, cover=cover, lyrics=False, words=True)
 
 
 def main():
