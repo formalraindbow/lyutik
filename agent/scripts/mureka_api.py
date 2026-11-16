@@ -146,8 +146,9 @@ def generate(lyrics, prompt="", vocal_id="", melody_id="", n=2, model="mureka-9.
             body["prompt"] = prompt[:1024]
         if vocal_id:
             body["vocal_id"] = vocal_id
-        if reference_id:                                   # опорный трек: аранжировка тянется к нему (upload, purpose=reference)
-            body["reference_id"] = reference_id
+        if reference_id:                                   # опорный трек: аранжировка тянется к нему (upload, purpose=reference).
+            body["reference_id"] = reference_id            # С описанием звука не совмещается (fal 422, 16.11): стиль задаёт трек
+            body.pop("prompt", None)
     if gender:
         body["gender"] = gender
     if backend() == "fal":                                 # на fal один запрос — одна песня: n заказов в очередь
