@@ -28,6 +28,8 @@ SECRETS = Path.home() / ".config" / "lyutik" / "secrets.env"
 MAX_STEPS = 40             # ходов модели за сессию
 WRAP_UP = 5                # за столько ходов до конца — напоминание сохранить собранное
 DEFAULT_SLEEP = 5          # минут, если персонаж не назначил сон сам: был занят — продолжает почти сразу
+IDLE_SLEEP = 60            # минут, если сессия только читала и сон не назначила: 16.11 восемь пустых сессий шли одна за другой по 5 минут
+LOOKING = {"read_file", "list_dir", "comments", "dms", "canon_search", "canon_read", "web_search", "web_read", "tidy"}
 RETRY_SLEEP = 5            # минут после сбоя сессии
 QUIET_LIMIT = 90           # секунд тишины в потоке ответа: модель думает долго — байты идут; не идут — обрыв, повтор в быструю
 HARD_LIMIT = 900           # секунд на один ответ целиком: дольше не ждём даже при живом потоке
@@ -889,7 +891,7 @@ def session(model, dry, operator, wake, ears=None, pending=(), delivered=None):
     messages = [{"role": "system", "content": compose(NAME, operator, wake=wake, dry=dry)},
                 {"role": "user", "content": dm_text(pending) if pending else f"Проснулся. Сейчас {stamp()}. Сессия началась." + morning(wake)}]
     log.start(wake, operator)
-    posts, slept, nudged = [], False, False
+    posts, slept, nudged, busy = [], False, False, False
     typist = None
 
     def listen(msgs):                                 # «печатает…» тем, кто написал, пока он читает
@@ -935,6 +937,7 @@ def session(model, dry, operator, wake, ears=None, pending=(), delivered=None):
             if name in ("reply", "reply_comment") and typist:
                 typist.stop()
             slept |= name == "sleep" and not result.startswith("ошибка")
+            busy |= name not in LOOKING and name != "sleep"
             if name == "post" and not result.startswith(("ошибка", "не опубликовано")):
                 posts.append(result)
         fresh = ears.poll(0) if ears else []          # написали, пока он работал — услышит сразу
@@ -951,7 +954,7 @@ def session(model, dry, operator, wake, ears=None, pending=(), delivered=None):
     if typist:
         typist.stop()
     sleep_file = HOME / "state" / "sleep.txt"
-    minutes = DEFAULT_SLEEP
+    minutes = DEFAULT_SLEEP if busy else IDLE_SLEEP
     if sleep_file.exists() and sleep_file.stat().st_mtime >= started:
         minutes = int(sleep_file.read_text().strip() or DEFAULT_SLEEP)
     log.end(minutes, posts)
