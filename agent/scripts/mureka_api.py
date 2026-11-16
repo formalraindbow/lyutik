@@ -135,7 +135,7 @@ def _call(method, path, body=None, form=None, timeout=120):
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             raise MurekaError(f"нет связи с Mureka: {getattr(e, 'reason', e)}")
 
-def generate(lyrics, prompt="", vocal_id="", melody_id="", n=2, model="mureka-9.5", gender=""):
+def generate(lyrics, prompt="", vocal_id="", melody_id="", n=2, model="mureka-9.5", gender="", reference_id=""):
     """Заказ песни; возвращает номер задачи. melody_id ни с чем не совмещается (так в документации) и русский
     текст не берёт: 400 «melody_id is not supported under the language of the input lyrics» (проба 8.11)."""
     body = {"lyrics": lyrics, "model": model, "n": n}
@@ -146,6 +146,8 @@ def generate(lyrics, prompt="", vocal_id="", melody_id="", n=2, model="mureka-9.
             body["prompt"] = prompt[:1024]
         if vocal_id:
             body["vocal_id"] = vocal_id
+        if reference_id:                                   # опорный трек: аранжировка тянется к нему (upload, purpose=reference)
+            body["reference_id"] = reference_id
     if gender:
         body["gender"] = gender
     if backend() == "fal":                                 # на fal один запрос — одна песня: n заказов в очередь

@@ -137,7 +137,7 @@ def budget_block(title, cost):
                 f"или убери песню в черновики")
     return ""
 
-def make(title, sound, lyrics, cover="", want="", avoid="", draft=False):
+def make(title, sound, lyrics, cover="", want="", avoid="", draft=False, reference=""):
     title, sound, lyrics, cover = title.strip(), sound.strip(), lyrics.strip(), (cover or "").strip()
     want, avoid = (want or "").strip(), (avoid or "").strip()
     lyrics = "\n".join(c for l in lyrics.splitlines()            # в скобках модель поёт вторым голосом — он поёт один
@@ -184,7 +184,9 @@ def make(title, sound, lyrics, cover="", want="", avoid="", draft=False):
         if problem:
             fail(problem)
         try:
-            run = mureka_api.generate(lyrics, style, vocal_id=vocal, n=n, model=model, gender="" if vocal else "male")
+            ref_id = mureka_api.upload(local(reference), "reference") if reference else ""
+            run = mureka_api.generate(lyrics, style, vocal_id=vocal, n=n, model=model, gender="" if vocal else "male",
+                                      reference_id=ref_id)
             choices = mureka_api.wait(run, limit=420)
         except mureka_api.MurekaError as e:
             fail(str(e))
@@ -246,6 +248,7 @@ def make(title, sound, lyrics, cover="", want="", avoid="", draft=False):
             path.with_suffix(".lines.json").write_text(json.dumps(lines, ensure_ascii=False), encoding="utf-8")
         entry = {"at": t.isoformat(timespec="seconds"), "title": title, "sound": sound, "lyrics": lyrics,
                  "path": rel(path), "seconds": round(seconds), "cost": cost, "run": run, "voice": voice, "style": style,
+                 **({"reference": reference} if reference else {}),
                  "model": model, "want": want, "avoid": avoid, "mureka_id": mureka_id, "draft": bool(draft) or None}
         if len(takes) > 1:
             entry.update(take=i, takes=len(takes))
@@ -668,7 +671,7 @@ def main():
     a, flags = sys.argv[1:], {}
     draft = "--draft" in a
     a = [x for x in a if x != "--draft"]
-    for flag in ("--cover", "--start", "--seconds", "--want", "--avoid", "--despite"):
+    for flag in ("--cover", "--start", "--seconds", "--want", "--avoid", "--despite", "--reference"):
         if flag in a:
             i = a.index(flag)
             flags[flag], a = (a[i + 1] if i + 1 < len(a) else "").strip(), a[:i] + a[i + 2:]
@@ -677,7 +680,7 @@ def main():
         print(__doc__); sys.exit(1)
     cmd = a[0]
     if cmd == "make" and len(a) >= 4:
-        make(a[1], a[2], a[3], cover, flags.get("--want", ""), flags.get("--avoid", ""), draft)
+        make(a[1], a[2], a[3], cover, flags.get("--want", ""), flags.get("--avoid", ""), draft, flags.get("--reference", ""))
     elif cmd == "snippet" and len(a) >= 2:
         snippet(a[1], a[2] if len(a) > 2 and a[2] else 25, a[3] if len(a) > 3 else None)
     elif cmd == "channel" and len(a) >= 2:
