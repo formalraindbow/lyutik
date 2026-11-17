@@ -471,6 +471,9 @@ def call_tool(name, args, dry):
 
 
 # ── модели ────────────────────────────────────────────────────────────────────
+class BrokenStream(ValueError):
+    """Поток ответа закрыт без finish_reason и без [DONE]: провайдер оборвал ответ, модель ничего не решала."""
+
 class GLM:
     """Мозг — цепочка OpenAI-совместимых провайдеров: NanoGPT (LLM_*) → anymodel (ANYMODEL_*) → Z.ai (GLM_*).
     У каждого основная и запасная модель. Провайдер не ответил за три захода — думает следующий в цепочке.
@@ -508,6 +511,8 @@ class GLM:
                     time.sleep(20 * (attempt + 1))
                     continue
                 raise RuntimeError(f"{model} ответил {e.code}: {detail}")
+            except BrokenStream as e:                    # без повтора: 17.11 anymodel cc/ рвал 10 заходов из 12, медиана 25 с —
+                raise RuntimeError(f"{model}: {e}")      # три захода той же модели стоили бы минуты на каждый ход
             except TimeoutError as e:                    # замолчала — следующий заход в быструю модель, без паузы
                 if attempt < 2:
                     emit("note", text=f"{model}: {e} — пробую {fallback}")
@@ -522,9 +527,12 @@ class GLM:
     @staticmethod
     def stream(req):
         """Ответ читается потоком: думает модель хоть пять минут — байты идут, и это не сбой. Тишина дольше
-        QUIET_LIMIT — обрыв; HARD_LIMIT — потолок на весь ответ. Куски собираются в обычное сообщение."""
+        QUIET_LIMIT — обрыв; HARD_LIMIT — потолок на весь ответ. Куски собираются в обычное сообщение.
+        Поток закрылся без finish_reason и без [DONE] — обрыв, а не ответ: anymodel 17.11 держал соединение
+        пингами до двух минут и закрывал его без данных, а цикл принимал это за «модель промолчала»."""
         msg = {"content": "", "reasoning_content": ""}
         calls = {}
+        finished = False
         started = time.time()
         with urllib.request.urlopen(req, timeout=QUIET_LIMIT) as r:
             for raw in r:
@@ -535,12 +543,14 @@ class GLM:
                     continue
                 data = line[5:].strip()
                 if data == "[DONE]":
+                    finished = True
                     break
                 try:
                     chunk = json.loads(data)
                 except ValueError:
                     continue
                 for ch in chunk.get("choices") or []:
+                    finished |= bool(ch.get("finish_reason"))
                     delta = ch.get("delta") or {}
                     msg["content"] += delta.get("content") or ""
                     msg["reasoning_content"] += delta.get("reasoning_content") or delta.get("reasoning") or ""
@@ -551,6 +561,8 @@ class GLM:
                         fn = tc.get("function") or {}
                         slot["function"]["name"] = slot["function"]["name"] or fn.get("name") or ""
                         slot["function"]["arguments"] += fn.get("arguments") or ""
+        if not finished:
+            raise BrokenStream("поток закрыт без конца ответа" + (", пришли только мысли" if msg["reasoning_content"] else ""))
         if calls:
             msg["tool_calls"] = [dict(calls[i], id=calls[i]["id"] or f"call_{i}") for i in sorted(calls)]
         return msg
