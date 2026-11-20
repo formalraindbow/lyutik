@@ -485,7 +485,8 @@ class GLM:
         errors = []
         for name, url, key, model, fallback in self.chain:
             try:
-                msg = self.ask(url, key, model, fallback, messages)
+                msg = (anthropic_ask(key, model, messages) if url == ANTHROPIC_URL
+                       else self.ask(url, key, model, fallback, messages))
             except RuntimeError as e:
                 errors.append(f"{name}: {e}")
                 emit("note", text=f"мозг {name} не ответил: {e} — передаю следующему")
@@ -498,7 +499,8 @@ class GLM:
     def ask(self, url, key, main, fallback, messages):
         for attempt in range(3):
             model = main if attempt == 0 else fallback
-            body = json.dumps({"model": model, "messages": messages, "tools": TOOLS,
+            plain = [{k: v for k, v in m.items() if k != "_anthropic"} for m in messages]   # блоки Claude — только звену ANTHROPIC
+            body = json.dumps({"model": model, "messages": plain, "tools": TOOLS,
                                "tool_choice": "auto", "stream": True}, ensure_ascii=False).encode()
             req = urllib.request.Request(url, data=body, method="POST", headers={
                 "Content-Type": "application/json", "Authorization": f"Bearer {key}",
@@ -568,6 +570,101 @@ class GLM:
         if calls:
             msg["tool_calls"] = [dict(calls[i], id=calls[i]["id"] or f"call_{i}") for i in sorted(calls)]
         return msg
+
+ANTHROPIC_URL = "anthropic:"   # звено ANTHROPIC ходит официальным SDK (pip anthropic) в Messages API, не в chat/completions
+SCHEMAS = {t["function"]["name"]: t["function"]["parameters"] for t in TOOLS}
+
+def _tool_id(i):
+    return re.sub(r"[^A-Za-z0-9_-]", "_", i or "") or "call"     # id чужих моделей — под шаблон Anthropic
+
+def anthropic_messages(messages):
+    """История цикла (формат chat/completions) → system и messages для Messages API. Ход Claude уходит назад
+    блоками, как пришёл (_anthropic, с мыслями и подписями): правка истории ломает его мысли. Ходы других моделей
+    собираются из текста и вызовов. Результаты инструментов подряд — одним сообщением, иначе он отучается от
+    параллельных вызовов."""
+    system, out = "", []
+    for m in messages:
+        role = m["role"]
+        if role == "system":
+            system += m["content"]
+        elif role == "assistant":
+            if m.get("_anthropic"):
+                out.append({"role": "assistant", "content": m["_anthropic"]})
+                continue
+            blocks = [{"type": "text", "text": m["content"]}] if (m.get("content") or "").strip() else []
+            for c in m.get("tool_calls") or []:
+                try:
+                    args = json.loads(c["function"].get("arguments") or "{}")
+                except ValueError:
+                    args = {}
+                blocks.append({"type": "tool_use", "id": _tool_id(c.get("id")), "name": c["function"]["name"],
+                               "input": args if isinstance(args, dict) else {}})
+            if blocks:
+                out.append({"role": "assistant", "content": blocks})
+        elif role == "tool":
+            block = {"type": "tool_result", "tool_use_id": _tool_id(m.get("tool_call_id")), "content": m.get("content") or "(пусто)"}
+            last = out[-1] if out else None
+            if (last and last["role"] == "user" and isinstance(last["content"], list)
+                    and all(b.get("type") == "tool_result" for b in last["content"])):
+                last["content"].append(block)
+            else:
+                out.append({"role": "user", "content": [block]})
+        else:
+            out.append({"role": "user", "content": m["content"]})
+    return system, out
+
+def anthropic_ask(key, model, messages):
+    """Ход Claude через официальный SDK: поток, кеш промпта (внутри сессии системный промпт, инструменты и история
+    повторяются — с кешем они стоят десятую часть), сводка мыслей для панели, запасная модель Anthropic на отказ.
+    Сбой любого рода — RuntimeError: цепочка отдаёт ход следующему звену."""
+    import anthropic
+    system, msgs = anthropic_messages(messages)
+    tools = [{"name": t["function"]["name"], "description": t["function"]["description"],
+              "input_schema": t["function"]["parameters"], "eager_input_streaming": True} for t in TOOLS]
+    client = anthropic.Anthropic(api_key=key, max_retries=2,
+                                 timeout=anthropic.Timeout(HARD_LIMIT, read=QUIET_LIMIT, connect=30.0))
+    try:
+        with client.beta.messages.stream(model=model, max_tokens=64000, system=system, messages=msgs, tools=tools,
+                                         thinking={"type": "adaptive", "display": "summarized"},
+                                         cache_control={"type": "ephemeral"},
+                                         betas=["server-side-fallback-2026-07-01"], fallbacks="default") as stream:
+            for _ in stream:
+                pass
+            final = stream.get_final_message()
+    except ValueError as e:                          # JSON вызова, который SDK не разобрал вовсе
+        raise RuntimeError(f"{model}: вызов инструмента не разобрался: {e}")
+    except anthropic.RateLimitError as e:
+        raise RuntimeError(f"{model}: лимит запросов (429): {str(e.message)[:200]}")
+    except anthropic.APIStatusError as e:
+        raise RuntimeError(f"{model} ответил {e.status_code}: {str(e.message)[:300]}")
+    except anthropic.APIConnectionError as e:
+        raise RuntimeError(f"нет связи с {model}: {type(e).__name__}: {e}")
+    if final.stop_reason not in ("end_turn", "tool_use", "stop_sequence"):
+        detail = getattr(final.stop_details, "category", None) if final.stop_reason == "refusal" else ""
+        raise RuntimeError(f"{model}: ход оборван ({final.stop_reason}{' ' + str(detail) if detail else ''})")
+    text = "".join(b.text for b in final.content if b.type == "text")
+    thought = "\n".join(b.thinking for b in final.content if b.type == "thinking" and getattr(b, "thinking", ""))
+    calls = []
+    for b in final.content:
+        if b.type != "tool_use":
+            continue
+        need = SCHEMAS.get(b.name, {}).get("required", [])
+        if b.name not in SCHEMAS or not isinstance(b.input, dict) or any(k not in b.input for k in need):
+            raise RuntimeError(f"{model}: вызов {b.name} без нужных аргументов")   # поток ввода прервался
+        calls.append({"id": b.id, "type": "function",
+                      "function": {"name": b.name, "arguments": json.dumps(b.input, ensure_ascii=False)}})
+    if not calls and not text.strip():
+        raise RuntimeError(f"{model}: ответ без текста и без вызова")
+    u = final.usage
+    LOGS.mkdir(exist_ok=True)
+    with (LOGS / "usage.jsonl").open("a", encoding="utf-8") as f:     # расход — отдельно: панель его не читает
+        f.write(json.dumps({"t": datetime.datetime.now().isoformat(timespec="seconds"), "model": final.model,
+                            "input": u.input_tokens, "cache_read": u.cache_read_input_tokens or 0,
+                            "cache_write": u.cache_creation_input_tokens or 0, "output": u.output_tokens}) + "\n")
+    msg = {"content": text, "reasoning_content": thought, "_anthropic": final.to_dict()["content"]}
+    if calls:
+        msg["tool_calls"] = calls
+    return msg
 
 class FakeModel:
     """Заглушка сухого прогона: тот же цикл теми же инструментами, без сети."""
@@ -930,6 +1027,8 @@ def session(model, dry, operator, wake, ears=None, pending=(), delivered=None):
         turn = {"role": "assistant", "content": msg.get("content") or ""}
         if calls:
             turn["tool_calls"] = calls
+        if msg.get("_anthropic"):              # ход Claude — назад теми же блоками
+            turn["_anthropic"] = msg["_anthropic"]
         messages.append(turn)
         if not calls:
             if nudged:                 # второй ход словами подряд — сессия закончена
@@ -997,8 +1096,10 @@ def brain_chain(s):
     """Звенья мозга по порядку: (имя, адрес, ключ, модель, запасная). Порядок и состав — BRAIN_ORDER в secrets.env
     (по умолчанию GLM,ANYMODEL,LLM: Z.ai → anymodel → NanoGPT). Без ключа звена нет. Модель звена — <ЗВЕНО>_BRAIN_MODEL,
     можно несколько через запятую: они пробуются по порядку раньше следующего звена. OPENROUTER — Claude через
-    OpenRouter на том же ключе, что у голоса: его баланс общий с голосом."""
+    OpenRouter на том же ключе, что у голоса: его баланс общий с голосом. ANTHROPIC — Claude напрямую официальным
+    SDK (anthropic_ask), нужен только ANTHROPIC_API_KEY."""
     known = {
+        "ANTHROPIC": ("Anthropic", "ANTHROPIC_", "claude-opus-5-5", "claude-opus-5-5"),
         "GLM": ("Z.ai", "GLM_", "glm-5.3", "glm-5.3-flash"),
         "ANYMODEL": ("anymodel", "ANYMODEL_", "glm/glm-5.3", "glm/glm-5.3-flash"),
         "LLM": ("NanoGPT", "LLM_", "z-ai/glm-5.3", "z-ai/glm-5.3-flash"),
@@ -1008,8 +1109,8 @@ def brain_chain(s):
     links = [known[x] for x in order if x in known]
     chain = []
     for name, p, model, fallback in links:
-        if s.get(p + "API_KEY") and s.get(p + "BASE_URL"):
-            url = s[p + "BASE_URL"].rstrip("/") + "/chat/completions"
+        if s.get(p + "API_KEY") and (s.get(p + "BASE_URL") or p == "ANTHROPIC_"):
+            url = ANTHROPIC_URL if p == "ANTHROPIC_" else s[p + "BASE_URL"].rstrip("/") + "/chat/completions"
             models = [m.strip() for m in (s.get(p + "BRAIN_MODEL") or s.get(p + "MODEL") or model).split(",") if m.strip()]
             spare = s.get(p + "BRAIN_FALLBACK") or s.get(p + "FALLBACK_MODEL") or fallback
             for m in models:                       # несколько через запятую — по порядку: первая недоступна, думает вторая
