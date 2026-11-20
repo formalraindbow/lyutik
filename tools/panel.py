@@ -5,9 +5,12 @@
     python3 tools/panel.py            http://127.0.0.1:8787
     python3 tools/panel.py --port 9000
 
-Читает logs/events.jsonl (его пишет tools/run.py) и файлы персонажа. Ничего не меняет. Страница сама
-обновляется каждые пару секунд. Картинки из agent/lyutik/media/ отдаёт по адресу /media/…, и только оттуда.
+Читает logs/events.jsonl (его пишет tools/run.py) и файлы персонажа. Страница сама обновляется каждые пару
+секунд. Картинки и песни из agent/lyutik/media/ отдаёт по адресу /media/…, и только оттуда.
 Адрес с #all на конце показывает всю историю, а не последние события.
+
+/studio — студия вживую для показа: поле заказа и лента того, как он делает песню. Заказ — единственное,
+что панель пишет: письмо оператора state/operator.txt (будит сразу), и только если ящик пуст.
 """
 import argparse, datetime, json, mimetypes, os, re, sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -164,6 +167,43 @@ def events_after(after):
         out.append(e)
     return {"events": out, "next": len(lines)}
 
+ORDER_MARK = "Заказ из зала"
+STUDIO_FILE = Path(__file__).with_name("studio.html")
+
+def studio_start(which):
+    """С какой строки журнала показывать студию: последняя сессия по заказу из зала (order) или просто последняя (last)."""
+    lines = read(EVENTS).splitlines()
+    found = None
+    for i in range(len(lines) - 1, -1, -1):
+        if '"kind": "session"' not in lines[i]:
+            continue
+        try:
+            e = json.loads(lines[i])
+        except ValueError:
+            continue
+        if which == "last" or str(e.get("operator") or "").startswith(ORDER_MARK):
+            found = i
+            break
+    return {"after": found if found is not None else len(lines), "found": found is not None}
+
+def order_letter(theme):
+    return (f"{ORDER_MARK} (показ курса, {datetime.datetime.now():%d.%m %H:%M}): песня на тему «{theme}».\n\n"
+            "Как — решай сам: что прочитать, о чём петь, каким звуком, сколько дублей и выпускать ли её. "
+            "Песня короткая: куплет и припев. Бюджет — $1.5 на эту песню, каждый дубль — через song_check. "
+            "Пока работаешь, за тобой смотрит зал.")
+
+def place_order(theme):
+    theme = " ".join(str(theme or "").split())[:200]
+    if not theme:
+        return 400, {"error": "Тема пустая — напиши, о чём песня."}
+    box = HOME / "state" / "operator.txt"
+    if box.exists():
+        return 409, {"error": "Лютику уже лежит письмо — он его ещё не прочёл. Подожди минуту."}
+    tmp = box.with_suffix(".studio.tmp")
+    tmp.write_text(order_letter(theme), encoding="utf-8")
+    tmp.rename(box)                                   # целиком или никак: run.py не прочтёт половину письма
+    return 200, {"ok": True, "theme": theme, "after": len(read(EVENTS).splitlines())}
+
 
 class Handler(BaseHTTPRequestHandler):
     def send(self, body, ctype, cache="no-store"):
@@ -200,8 +240,31 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(json.dumps(snapshot(), ensure_ascii=False), "application/json")
         if u.path.startswith("/media/"):
             return self.media(u.path[len("/media/"):])
+        if u.path == "/studio":
+            return self.send(read(STUDIO_FILE) or "нет tools/studio.html", "text/html; charset=utf-8")
+        if u.path == "/api/studio/start":
+            which = (parse_qs(u.query).get("from") or ["order"])[0]
+            return self.send(json.dumps(studio_start(which)), "application/json")
         self.send_response(404)
         self.end_headers()
+
+    def do_POST(self):
+        if urlparse(self.path).path != "/api/order" or self.headers.get("X-Studio") != "1":
+            self.send_response(404 if urlparse(self.path).path != "/api/order" else 403)   # свой заголовок: чужая
+            self.end_headers()                                   # страница без разрешения сервера его не пошлёт
+            return
+        try:
+            n = min(int(self.headers.get("Content-Length") or 0), 4096)
+            theme = json.loads(self.rfile.read(n).decode("utf-8") or "{}").get("theme")
+        except (ValueError, AttributeError):
+            theme = ""
+        code, body = place_order(theme)
+        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def log_message(self, *a):
         pass
@@ -377,7 +440,7 @@ function keep(el, html){
 let next = location.hash === "#all" ? 0 : -1, days = [], snap = null, waiting = [];
 function ingest(evs){
   for (const e of evs){
-    if (["start", "sleeping", "stopped", "calling"].includes(e.kind)) continue;
+    if (["start", "sleeping", "stopped", "calling", "tool_start"].includes(e.kind)) continue;
     if (["dm", "comment", "vote"].includes(e.kind) && days.length && days[days.length - 1].end){ waiting.push(e); continue; }   // написали или проголосовали во сне — в следующую сессию
     if (e.kind === "session" || !days.length) days.push({head: e.kind === "session" ? e : {}, evs: waiting.splice(0), end: null});
     const d = days[days.length - 1];

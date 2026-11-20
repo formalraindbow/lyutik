@@ -1042,6 +1042,7 @@ def session(model, dry, operator, wake, ears=None, pending=(), delivered=None):
             try:
                 raw = c["function"].get("arguments") or "{}"
                 args = raw if isinstance(raw, dict) else json.loads(raw)
+                emit("tool_start", step=step, name=name, args=args)   # студия видит заказ, пока Mureka поёт
                 result = call_tool(name, args, dry)
             except ValueError:
                 args, result = {}, "аргументы не разобрались как JSON — повтори вызов"

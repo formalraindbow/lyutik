@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Студия Лютика — вживую</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Студия вживую: сверху заказ и дорожка этапов, ниже лента его ходов — от мысли до решения */
+:root {
+  --bg: #eef0f2; --surface: #ffffff; --ink: #1d232b; --muted: #5b6672; --rule: #d5dae0;
+  --accent: #12706b; --accent-soft: #e0f0ee;
+  --good: #2e7d4f; --good-soft: #e3f3e9; --bad: #b3261e; --bad-soft: #fbe7e5; --warn: #8a5a00; --warn-soft: #fbf0d9;
+  --display: "Unbounded", "Golos Text", system-ui, sans-serif;
+  --body: "Golos Text", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #12161b; --surface: #1a2027; --ink: #e6eaee; --muted: #9aa6b2; --rule: #2a323b;
+  --accent: #4fb3aa; --accent-soft: #163330;
+  --good: #5cc28a; --good-soft: #15301f; --bad: #f07167; --bad-soft: #3a1a18; --warn: #e3b341; --warn-soft: #33290f;
+  color-scheme: dark } }
+* { box-sizing: border-box }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.55 var(--body); padding: 28px max(16px, 3vw) 80px }
+.wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 28px }
+h1 { font: 700 clamp(28px, 4.4vw, 46px)/1.05 var(--display); margin: 6px 0 0; letter-spacing: -0.01em }
+.label { font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted) }
+.status { margin-top: 10px; font-size: 15px; color: var(--muted) }
+.status b { color: var(--ink); font-weight: 600 }
+form { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch }
+form input { flex: 1 1 360px; min-width: 0; font: 500 20px/1.3 var(--body); padding: 14px 16px; border-radius: 12px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink) }
+form button { font: 600 18px/1 var(--body); padding: 14px 22px; border-radius: 12px; border: 0; background: var(--accent); color: var(--surface); cursor: pointer }
+form button:disabled { opacity: .5; cursor: default }
+form input:focus-visible, form button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.frame { font-size: 14px; color: var(--muted); max-width: 80ch }
+.track { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px }
+.stage { padding: 10px 8px; border-radius: 10px; background: var(--surface); border: 1px solid var(--rule); text-align: center; font: 500 13px/1.25 var(--body); color: var(--muted) }
+.stage.done { color: var(--ink); border-color: var(--accent) }
+.stage.now { background: var(--accent); border-color: var(--accent); color: var(--surface) }
+.stage .t { display: block; font: 400 11px/1 var(--mono); margin-top: 5px; opacity: .8; font-variant-numeric: tabular-nums }
+@media (max-width: 760px) { .track { grid-template-columns: repeat(4, minmax(0, 1fr)) } }
+.feed { display: grid; gap: 10px }
+.ev { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 12px; align-items: start }
+.ev .time { font: 400 12px/1.6 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 2px }
+.ev .body { min-width: 0; display: grid; gap: 6px }
+.said { font-size: 19px; line-height: 1.5; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 12px 16px }
+.thought { font-size: 14px; color: var(--muted); font-style: italic; overflow-wrap: anywhere }
+.act { font-size: 15px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline }
+.act .what { font: 500 12px/1 var(--mono); color: var(--accent); text-transform: uppercase; letter-spacing: .06em }
+.act .sub { color: var(--muted); overflow-wrap: anywhere; min-width: 0 }
+.card { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; min-width: 0 }
+.card.song { border-color: var(--accent) }
+.card h3 { margin: 0; font: 500 18px/1.3 var(--display) }
+.en { font: 400 13px/1.5 var(--mono); color: var(--muted); overflow-wrap: anywhere }
+pre.lyrics { margin: 0; white-space: pre-wrap; font: 16px/1.55 var(--body); max-height: 360px; overflow: auto; padding: 10px 12px; background: var(--bg); border-radius: 8px }
+.timer { font: 500 15px/1 var(--mono); color: var(--accent) }
+.pill { font: 600 13px/1 var(--mono); padding: 6px 10px; border-radius: 999px; white-space: nowrap }
+.pill.good { color: var(--good); background: var(--good-soft) } .pill.bad { color: var(--bad); background: var(--bad-soft) }
+.reasons { display: grid; gap: 3px; font-size: 15px }
+.reasons .bad { color: var(--bad) } .reasons .warn { color: var(--warn) }
+audio { width: 100%; height: 38px }
+.take { display: grid; gap: 4px }
+.take .name { font: 400 12px/1.3 var(--mono); color: var(--muted); overflow-wrap: anywhere }
+.small { font-size: 13px; color: var(--muted) }
+.empty { padding: 26px; text-align: center; color: var(--muted); border: 1px dashed var(--rule); border-radius: 12px }
+a { color: var(--accent) }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="label">Лютик · бард из «Ведьмака» · студия вживую</div>
+    <h1>Студия Лютика</h1>
+    <div class="status" id="status">Смотрю, чем он занят…</div>
+  </header>
+
+  <section style="display:grid;gap:10px">
+    <form id="order">
+      <input id="theme" name="theme" maxlength="200" autocomplete="off" placeholder="О чём песня? Тему даёт зал">
+      <button id="go" type="submit">Заказать</button>
+    </form>
+    <p class="frame" id="frame">Лютик получает только тему и рамку: «как — решай сам: что прочитать, о чём петь, каким звуком, сколько дублей и выпускать ли её; песня короткая, бюджет $1.5, каждый дубль — через судью». Дальше всё решает он.</p>
+  </section>
+
+  <section class="track" id="track" aria-label="Этапы песни"></section>
+
+  <section class="feed" id="feed" aria-live="polite"></section>
+</div>
+
+<script>
+(function () {
+  const STAGES = ["замысел", "поиск", "текст", "Mureka поёт", "дубли", "судья", "решение", "память"];
+  const SEARCH = new Set(["canon_search", "canon_read", "web_search", "web_read", "music_search", "music_get", "music_lyrics", "music_chart", "music_library", "listen", "look", "news"]);
+  const PEEK = new Set(["comments", "dms", "channel_info", "polls", "news", "follow", "describe_channel"]);
+  const SLOW = new Set(["song", "song_check", "song_edit", "song_remix", "release", "post_song", "song_snippet", "web_read", "listen", "draw", "sing", "lute"]);
+  let after = -1, events = [], startT = null, order = null;
+  const $ = s => document.querySelector(s);
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const hhmmss = t => String(t || "").slice(11, 19);
+  const since = t => { if (!startT || !t) return ""; const s = Math.max(0, Math.round((new Date(t) - new Date(startT)) / 1000)); return "+" + Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+  const mp3s = s => [...new Set((String(s || "").match(/agent\/lyutik\/media\/[^\s,;»"']+\.mp3/g) || []))];
+  const src = p => "/media/" + p.replace(/^agent\/lyutik\/media\//, "").split("/").map(encodeURIComponent).join("/");
+  const first = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n) + "…" : s; };
+
+  function player(p) {
+    const t = el("div", "take"); t.append(el("span", "name", p.split("/").pop()));
+    const a = el("audio"); a.controls = true; a.preload = "none"; a.src = src(p); t.append(a); return t;
+  }
+
+  function verdictBlock(text) {
+    const box = el("div", "card");
+    const good = /— ГОДНО/.test(text), head = el("div", "act");
+    head.append(el("span", "pill " + (good ? "good" : "bad"), good ? "судья: годно" : "судья: править"));
+    box.append(head);
+    const rs = el("div", "reasons");
+    (text.split("\n").slice(1).join(" ").match(/(Нельзя, а звучит:[^.]*\.|Нужно, а не звучит:[^.]*\.|Сомнительно[^.]*:[^.]*\.)/g) || [])
+      .forEach(x => rs.append(el("span", /^Сомнительно/.test(x) ? "warn" : "bad", x)));
+    if (rs.childNodes.length) box.append(rs);
+    return box;
+  }
+
+  function row(e, body) {
+    const r = el("div", "ev"); const tm = el("div", "time"); tm.append(hhmmss(e.t)); tm.append(el("br")); tm.append(since(e.t));
+    r.append(tm, body); return r;
+  }
+
+  function render() {
+    const feed = $("#feed"); feed.replaceChildren();
+    const pending = new Map();
+    const reached = {}; let afterCheck = false, songPending = false;
+    const mark = (st, t) => { if (!reached[st]) reached[st] = t; };
+    if (!events.length) { feed.append(el("div", "empty", order ? "Письмо у Лютика. Он проснётся в течение полуминуты — дальше всё видно здесь." : "Здесь появится, как Лютик делает песню: от первой мысли до решения.")); }
+    events.forEach(e => {
+      const k = e.kind;
+      if (k === "session") {
+        startT = startT || e.t;
+        const b = el("div", "body"); const a = el("div", "act");
+        a.append(el("span", "what", "проснулся"), el("span", "sub", e.operator ? first(e.operator, 160) : (e.wake || "")));
+        b.append(a); feed.append(row(e, b)); return;
+      }
+      if (k === "said") { mark("замысел", e.t); const b = el("div", "body"); b.append(el("div", "said", e.text.trim())); feed.append(row(e, b)); if (afterCheck) mark("решение", e.t); return; }
+      if (k === "thought") { mark("замысел", e.t); const b = el("div", "body"); b.append(el("div", "thought", "мысль: " + first(e.text, 260))); feed.append(row(e, b)); return; }
+      if (k === "tool_start") {
+        if (SEARCH.has(e.name)) mark("поиск", e.t);
+        if (e.name === "song") {
+          mark("текст", e.t); mark("Mureka поёт", e.t);
+          const c = el("div", "card song"); const a = e.args || {};
+          c.append(el("div", "label", "заказ Mureka"), el("h3", null, "«" + (a.title || "без названия") + "»"));
+          if (a.want) c.append(el("div", null, a.want));
+          if (a.avoid) c.append(el("div", "small", "Нельзя: " + a.avoid));
+          if (a.sound) c.append(el("div", "en", a.sound));
+          if (a.lyrics) c.append(el("pre", "lyrics", a.lyrics));
+          const tmr = el("span", "timer", "поёт…"); tmr.dataset.since = e.t; c.append(tmr);
+          pending.set(e.step + ":" + e.name, tmr); feed.append(row(e, c)); return;
+        }
+        if (SLOW.has(e.name)) {
+          const a = el("div", "act"); a.append(el("span", "what", e.name === "song_check" ? "слушает дубль" : e.name), el("span", "sub", first((e.args && (e.args.path || e.args.query || e.args.url || e.args.title)) || "", 120)));
+          const tmr = el("span", "timer", "…"); tmr.dataset.since = e.t; a.append(tmr);
+          pending.set(e.step + ":" + e.name, tmr); const b = el("div", "body"); b.append(a); feed.append(row(e, b));
+        }
+        return;
+      }
+      if (k === "tool") {
+        const key = e.step + ":" + e.name, tmr = pending.get(key);
+        if (tmr) { tmr.textContent = "готово"; delete tmr.dataset.since; pending.delete(key); }
+        const r = String(e.result || ""), a = e.args || {}, b = el("div", "body");
+        if (e.name === "song" || e.name === "song_edit" || e.name === "song_remix") {
+          mark("дубли", e.t); const c = el("div", "card"); c.append(el("div", "act", first(r.split("\n")[0], 220)));
+          mp3s(r).filter(p => !/\.full\.mp3$/.test(p)).forEach(p => c.append(player(p))); b.append(c);
+        } else if (e.name === "song_check") {
+          mark("судья", e.t); afterCheck = true; b.append(verdictBlock(r)); if (a.path) b.append(player(a.path));
+        } else if (["release", "post", "post_song", "song_snippet", "post_photo"].includes(e.name)) {
+          mark("решение", e.t); const x = el("div", "act"); x.append(el("span", "what", "выпустил"));
+          const link = (r.match(/https:\/\/t\.me\/\S+/) || [])[0];
+          if (link) { const l = el("a", null, link); l.href = link; l.target = "_blank"; l.rel = "noopener"; x.append(l); } else x.append(el("span", "sub", first(r, 200)));
+          b.append(x);
+        } else if (e.name === "remember" || (e.name === "write_file" && /memory|GOALS|state\.md/.test(a.path || ""))) {
+          if (afterCheck) mark("память", e.t);
+          const x = el("div", "act"); x.append(el("span", "what", "запомнил"), el("span", "sub", first((a.name ? a.name + ": " : (a.path || "") + ": ") + (a.text || a.content || ""), 220))); b.append(x);
+        } else if (SEARCH.has(e.name)) {
+          mark("поиск", e.t); const x = el("div", "act"); x.append(el("span", "what", e.name.replace("_", " ")), el("span", "sub", first(a.query || a.url || a.path || a.track || "", 120) + " — " + first(r, 160))); b.append(x);
+        } else if (e.name === "read_file" || e.name === "list_dir") {
+          const x = el("div", "act"); x.append(el("span", "what", "листает"), el("span", "sub", a.path || "")); b.append(x);
+        } else if (e.name === "sleep") {
+          const x = el("div", "act"); x.append(el("span", "what", "уснул"), el("span", "sub", (a.minutes || "") + " мин")); b.append(x);
+        } else if (e.name === "ticket") {
+          const x = el("div", "act"); x.append(el("span", "what", "написал разработчику"), el("span", "sub", first(a.text, 200))); b.append(x);
+        } else if (afterCheck && ["song", "song_edit", "song_remix"].includes(e.name)) {
+          mark("решение", e.t);
+        } else {
+          const x = el("div", "act"); x.append(el("span", "what", PEEK.has(e.name) ? "заглянул" : e.name), el("span", "sub", PEEK.has(e.name) ? e.name : first(r, 140))); b.append(x);
+        }
+        if (afterCheck && ["song", "song_edit", "song_remix"].includes(e.name) && reached["судья"] && e.t > reached["судья"]) mark("решение", e.t);
+        feed.append(row(e, b)); return;
+      }
+      if (k === "session_end") {
+        const b = el("div", "body"); const x = el("div", "act");
+        x.append(el("span", "what", "сессия окончена"), el("span", "sub", `постов ${(e.posts || []).length}, сон ${e.sleep || 0} мин`)); b.append(x); feed.append(row(e, b));
+      }
+    });
+    songPending = [...pending.keys()].some(k => k.endsWith(":song"));
+    const track = $("#track"); track.replaceChildren();
+    const order_ = STAGES.filter(s => reached[s]); const now = songPending ? "Mureka поёт" : order_[order_.length - 1];
+    STAGES.forEach(s => { const d = el("div", "stage" + (s === now ? " now" : reached[s] ? " done" : "")); d.append(s); if (reached[s]) d.append(el("span", "t", since(reached[s]))); track.append(d); });
+  }
+
+  function tick() {
+    document.querySelectorAll(".timer[data-since]").forEach(t => {
+      const s = Math.max(0, Math.round((Date.now() - new Date(t.dataset.since)) / 1000));
+      t.textContent = (t.closest(".song") ? "Mureka поёт " : "") + Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+    });
+  }
+
+  async function poll() {
+    if (after < 0) return;
+    try {
+      const r = await fetch("/api/events?after=" + after); const d = await r.json();
+      const fresh = d.events.filter(e => !["calling", "note", "start", "sleeping", "vote"].includes(e.kind));
+      after = d.next;
+      if (fresh.length) { events = events.concat(fresh); render(); }
+    } catch (e) {}
+  }
+
+  async function snap() {
+    try {
+      const d = await (await fetch("/api/snapshot")).json(); const s = d.status || {}, st = $("#status"); st.replaceChildren();
+      const say = { sleeping: "спит" + (s.until ? " до " + String(s.until).slice(11, 16) : ""), thinking: "думает", acting: "работает", stopped: "остановлен", starting: "просыпается", error: "сбой" }[s.state] || s.state;
+      st.append("Сейчас Лютик "); st.append(el("b", null, say));
+      if (d.operator_pending) st.append(" · письмо в ящике, он его ещё не прочёл");
+    } catch (e) {}
+  }
+
+  $("#order").addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const theme = $("#theme").value.trim(); if (!theme) { $("#theme").focus(); return; }
+    $("#go").disabled = true;
+    try {
+      const r = await fetch("/api/order", { method: "POST", headers: { "Content-Type": "application/json", "X-Studio": "1" }, body: JSON.stringify({ theme }) });
+      const d = await r.json();
+      if (!r.ok) { $("#frame").textContent = d.error || "Заказ не ушёл."; $("#go").disabled = false; return; }
+      order = d.theme; after = d.after; events = []; startT = null;
+      $("#frame").textContent = "Заказ ушёл: «" + d.theme + "». Дальше решает Лютик."; render(); snap();
+    } catch (e) { $("#frame").textContent = "Панель не ответила — проверь туннель."; $("#go").disabled = false; }
+  });
+
+  (async () => {
+    const which = location.hash === "#last" ? "last" : "order";
+    try { const d = await (await fetch("/api/studio/start?from=" + which)).json(); after = d.after; } catch (e) { after = 0; }
+    render(); snap(); poll();
+    setInterval(poll, 1500); setInterval(snap, 5000); setInterval(tick, 1000);
+  })();
+})();
+</script>
+</body>
+</html>
