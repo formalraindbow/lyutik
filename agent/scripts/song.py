@@ -125,9 +125,11 @@ def nano(method, url, body=None):
         fail(f"нет связи с NanoGPT: {getattr(e, 'reason', e)}")
 
 def spent_on(title):
-    """Сколько денег ушло на песню с этим названием: каждая запись с ценой — дубль, проверка, правка или ремикс."""
+    """Сколько денег ушло на песню с этим названием: каждая запись с ценой — дубль, проверка, правка или ремикс.
+    SONG_BUDGET_SINCE (ISO-время) — считать только с него: перепев альбома 20.11 начинает бюджет заново."""
+    since = secrets().get("SONG_BUDGET_SINCE") or ""
     return round(sum(float(x.get("cost") or 0) for x in read_jsonl(SONGS)
-                     if x.get("title") == title and not x.get("dry")), 3)
+                     if x.get("title") == title and not x.get("dry") and (x.get("at") or "") >= since), 3)
 
 def budget_block(title, cost):
     budget = float(secrets().get("SONG_BUDGET") or SONG_BUDGET)
