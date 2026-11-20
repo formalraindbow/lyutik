@@ -521,6 +521,9 @@ def check_block(src, title, despite=""):
 def release_block():
     """Почему сейчас нельзя выпускать песню в канал; пусто — можно. Считаются целые песни и релизы, снятые — нет."""
     import datetime as _dt
+    free = secrets().get("RELEASE_FREE_UNTIL") or ""   # окно без зазора (20.11: альбом выходит за вечер); после — снова 48 ч
+    if free and now().isoformat() < free:
+        return ""
     times = []
     for p in read_jsonl(POSTS):
         if p.get("format") in ("release", "song") and not p.get("deleted_at") and not p.get("dry") \

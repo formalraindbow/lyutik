@@ -9,8 +9,10 @@
 check слушает тремя способами и сверяет с замыслом песни (want — что должно быть, avoid — чего нельзя, из song;
 хор, женский голос и завывания проверяются всегда — он поёт один). Судья — разбор самой Mureka (/v1/song/describe,
 $0.1: инструменты, голоса с манерой, жанры, теги): замер 8.11 — точно и одинаково от прогона к прогону. Сверка с замыслом,
-а не только чёрный список: при названных в замысле инструментах любой другой — лишний; при «спокойно» — без громкого
-настроения; надрыв в голосе («Powerful», «Operatic») — в отчёт как манера: решает замысел. Калибровка 8.11 на 8 дублях
+а не только чёрный список: при названных в замысле инструментах любой другой — лишний; надрыв в голосе («Powerful»,
+«Dramatic») — в отчёт как манера: решает замысел; завывания (belting, soaring, operatic, мелизмы) — брак, даже если их
+слышит один Gemini. Калибровка 20.11 (9 дублей, ухо Вовы, совпало 8 из 9): «спокойно» снято, шейкер и щелчки
+разрешены, завывания — строгий стоп. Калибровка 8.11 на 8 дублях
 с метками на слух: все 6 забракованных или с бэками — «править» (в том числе три песни канала, спетые с «no backing
 vocals, no choir» в стиле через NanoGPT и клон: хор, барабаны, бас), оба чистых дубля прямой Mureka — «годно», и ухо
 Вовы согласно: «по задаче лютня и ничего лишнего — норм». Характер исполнения проверка не меряет: оба чистых дубля
@@ -46,9 +48,9 @@ KINDS = {
     "поп": r"pop\b|поп\b|попс|эстрад|dance",
     "шансон": r"chanson|шансон",
     "электрогитара": r"electric guitar|distort|электрогитар|перегруз",
-    "завывания": r"melisma|vocal runs|belting|рулад|завыв|распев|мелизм",
+    "завывания": r"melisma|vocal runs|belting|soaring|operatic|wail|рулад|завыв|распев|мелизм|вопл",
     "щипковая акустика": r"lute|nylon|acoustic guitar|classical guitar|mandolin|oud\b|plucked|лютн|акустик|щипков|нейлон",
-    "спокойно": r"calm|gentle|intimate|melanchol|contemplative|спокой|тих|интимн|меланхол",
+    # «спокойно» снято 20.11 по калибровке: ухо Вовы не считает громкое настроение браком
     "бас": r"bass|бас(?!н)",
     "смычковые": r"violin|fiddle|cello|viola|strings|скрип|виолонч|смычк",
     "клавишные": r"piano|keys|organ|harpsichord|рояль|пианин|фортепиан|орган|клавесин|клавиш",
@@ -59,9 +61,8 @@ INSTRUMENT_KINDS = {"барабаны", "перкуссия", "синтезат�
 VOICE = re.compile(r"(?i)vocal|voice|choir|singer")
 # так Mureka называет надрыв в голосе. Это не брак, а манера: ухо Вовы 8.11 — у чистых дублей «Warm, Intimate» голос
 # «без характера, монотонный добренький», второй куплет просил надрыва. В отчёт — как описание, решает замысел
-STRAIN = re.compile(r"(?i)\b(powerful|operatic|soaring|belting|strained|theatrical|dramatic|anthemic)\b")
-LOUD_MOOD = re.compile(r"(?i)\b(energetic|driving|anthemic|soaring|cathartic|epic|uplifting|danceable|aggressive|"
-                       r"powerful|dramatic|build-?up|high-energy)")
+# завывания (belting, soaring, operatic) — не надрыв, а брак: калибровка 20.11, «завывания — строгий стоп»
+STRAIN = re.compile(r"(?i)\b(powerful|strained|theatrical|dramatic|anthemic)\b")
 ALWAYS_AVOID = ["хор и бэк-вокал", "женский голос", "завывания"]   # поёт один (ядро, п. 12) — проверяется всегда
 NEGATED = re.compile(r"(?i)\b(?:no|without|absence of|lack of|free of|devoid of)\s+(?:[\w-]+\s*){1,4}")
 
@@ -146,8 +147,6 @@ def split_intent(want, avoid):
             yes.append(sent.strip(" ,—-:"))
     return ", ".join(yes), ", ".join(no)
 
-MOODS = {"спокойно"}
-
 def plan(want, avoid):
     """Что проверять: виды «нужно» в порядке замысла (первый инструмент — ведущий), виды «нельзя» (с теми, что всегда),
     и пункты замысла своими словами."""
@@ -168,19 +167,19 @@ def named_in(entry, text):
 def judge(d, g, w_kinds, a_kinds, free, sound=""):
     """Решает разбор Mureka; Gemini — где именно, и сомнения там, где Mureka молчит.
     Сверка с замыслом, а не только чёрный список: когда в замысле названы инструменты, любой другой — лишний;
-    при «спокойно» — без громкого настроения; надрыв в голосе — в сомнительное, как манера, а не брак."""
+    надрыв в голосе — в сомнительное, как манера, а не брак; завывания — брак."""
     g_items = {str(x.get("item", "")).split(" (")[0].strip().lower(): x for x in g.get("items") or []}
     confirmed, missing, doubtful = [], [], []
     for k in a_kinds:
         mu, (ge, where) = heard_by_mureka(k, d), heard_by_gemini(k, g_items)
-        if mu:
+        if mu or (ge and k == "завывания"):              # завывания — брак, даже если их слышит только Gemini
             confirmed.append(f"{k}{f' ({where})' if ge and where else ''}")
         elif ge:
             doubtful.append(f"{k} — слышит только Gemini{f' ({where})' if where else ''}")
     unheard = [k for k in w_kinds if not heard_by_mureka(k, d)]
     named = [k for k in w_kinds if k in INSTRUMENT_KINDS]
-    lead = named[0] if named else None                    # без ведущего инструмента или настроения — брак;
-    missing = [k for k in unheard if k == lead or k in MOODS]   # второстепенное Mureka может просто не подписать (9.11: заслонка)
+    lead = named[0] if named else None                    # без ведущего инструмента — брак;
+    missing = [k for k in unheard if k == lead]           # второстепенное Mureka может просто не подписать (9.11: заслонка)
     doubtful += [f"{k} — в замысле есть, Mureka не слышит" for k in unheard if k not in missing]
     played = [str(x) for x in d.get("instrument") or [] if not VOICE.search(str(x))]
     if named:                                             # замысел назвал инструменты — остальные лишние
@@ -192,10 +191,6 @@ def judge(d, g, w_kinds, a_kinds, free, sound=""):
                      for m in STRAIN.finditer(str(x))})
     if strain:
         doubtful.append("надрыв в голосе: " + ", ".join(strain) + " — по замыслу ли")
-    if "спокойно" in w_kinds:
-        loud = [str(t) for t in d.get("tags") or [] if LOUD_MOOD.search(str(t))]
-        if loud:
-            confirmed.append("не спокойно: " + ", ".join(loud))
     for x in free:                                        # своими словами: спросить можно только Gemini
         hit = g_items.get(x.lower())
         if hit is not None and not hit.get("heard"):
