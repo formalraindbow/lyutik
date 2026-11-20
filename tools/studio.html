@@ -108,11 +108,14 @@ a { color: var(--accent) }
     const a = el("audio"); a.controls = true; a.preload = "none"; a.src = src(p); t.append(a); return t;
   }
 
-  function verdictBlock(text) {
+  function verdictBlock(text, path) {
     const box = el("div", "card");
     const good = /— ГОДНО/.test(text), head = el("div", "act");
     head.append(el("span", "pill " + (good ? "good" : "bad"), good ? "судья: годно" : "судья: править"));
+    const title = (text.match(/^«([^»]+)»/) || [])[1];
+    if (title) head.append(el("span", "sub", "«" + title + "»"));
     box.append(head);
+    if (path) box.append(player(path));
     const rs = el("div", "reasons");
     (text.split("\n").slice(1).join(" ").match(/(Нельзя, а звучит:[^.]*\.|Нужно, а не звучит:[^.]*\.|Сомнительно[^.]*:[^.]*\.)/g) || [])
       .forEach(x => rs.append(el("span", /^Сомнительно/.test(x) ? "warn" : "bad", x)));
@@ -166,10 +169,13 @@ a { color: var(--accent) }
         if (tmr) { tmr.textContent = "готово"; delete tmr.dataset.since; pending.delete(key); }
         const r = String(e.result || ""), a = e.args || {}, b = el("div", "body");
         if (e.name === "song" || e.name === "song_edit" || e.name === "song_remix") {
-          mark("дубли", e.t); const c = el("div", "card"); c.append(el("div", "act", first(r.split("\n")[0], 220)));
-          mp3s(r).filter(p => !/\.full\.mp3$/.test(p)).forEach(p => c.append(player(p))); b.append(c);
+          mark("дубли", e.t); const c = el("div", "card"); const takes = mp3s(r).filter(p => !/\.full\.mp3$/.test(p));
+          const head = el("div", "act");
+          if (takes.length) head.append(el("span", "what", e.name === "song" ? "Mureka спела" : "правка готова"), el("span", "sub", "«" + (a.title || (r.match(/«([^»]+)»/) || [])[1] || "") + "» — дублей: " + takes.length));
+          else head.append(el("span", "sub", first(r, 220)));       // отказ или ошибка — как есть
+          c.append(head); takes.forEach(p => c.append(player(p))); b.append(c);
         } else if (e.name === "song_check") {
-          mark("судья", e.t); afterCheck = true; b.append(verdictBlock(r)); if (a.path) b.append(player(a.path));
+          mark("судья", e.t); afterCheck = true; b.append(verdictBlock(r, a.path));
         } else if (["release", "post", "post_song", "song_snippet", "post_photo"].includes(e.name)) {
           mark("решение", e.t); const x = el("div", "act"); x.append(el("span", "what", "выпустил"));
           const link = (r.match(/https:\/\/t\.me\/\S+/) || [])[0];
