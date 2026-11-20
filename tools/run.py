@@ -996,11 +996,13 @@ def nap(until, reason, ears=None):
 def brain_chain(s):
     """Звенья мозга по порядку: (имя, адрес, ключ, модель, запасная). Порядок и состав — BRAIN_ORDER в secrets.env
     (по умолчанию GLM,ANYMODEL,LLM: Z.ai → anymodel → NanoGPT). Без ключа звена нет. Модель звена — <ЗВЕНО>_BRAIN_MODEL,
-    можно несколько через запятую: они пробуются по порядку раньше следующего звена."""
+    можно несколько через запятую: они пробуются по порядку раньше следующего звена. OPENROUTER — Claude через
+    OpenRouter на том же ключе, что у голоса: его баланс общий с голосом."""
     known = {
         "GLM": ("Z.ai", "GLM_", "glm-5.3", "glm-5.3-flash"),
         "ANYMODEL": ("anymodel", "ANYMODEL_", "glm/glm-5.3", "glm/glm-5.3-flash"),
         "LLM": ("NanoGPT", "LLM_", "z-ai/glm-5.3", "z-ai/glm-5.3-flash"),
+        "OPENROUTER": ("OpenRouter", "OPENROUTER_", "anthropic/claude-sonnet-5.5", "anthropic/claude-sonnet-5.5"),
     }
     order = [x.strip().upper() for x in (s.get("BRAIN_ORDER") or "GLM,ANYMODEL,LLM").split(",") if x.strip()]
     links = [known[x] for x in order if x in known]
