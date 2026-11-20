@@ -563,6 +563,8 @@ class GLM:
                         slot["function"]["arguments"] += fn.get("arguments") or ""
         if not finished:
             raise BrokenStream("поток закрыт без конца ответа" + (", пришли только мысли" if msg["reasoning_content"] else ""))
+        if not calls and not msg["content"].strip():     # 20.11 anymodel cc/: finish «stop», внутри одни мысли — 3 из 3
+            raise BrokenStream("ответ без текста и без вызова" + (" — одни мысли" if msg["reasoning_content"] else ""))
         if calls:
             msg["tool_calls"] = [dict(calls[i], id=calls[i]["id"] or f"call_{i}") for i in sorted(calls)]
         return msg
