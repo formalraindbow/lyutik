@@ -1,0 +1,253 @@
+<title>Показ Лютика</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Шпаргалка ведущего: одна колонка, сверху часы до слота, дальше блоки в порядке показа */
+:root {
+  --bg: #f3f4f1; --panel: #ffffff; --fg: #1c211f; --muted: #5d6662; --line: #d9ddd8;
+  --accent: #1f7a68; --accent-soft: #e2f0ec; --warn: #a8531d; --warn-soft: #f7e9df; --bad: #b23a3a;
+  --sans: "Golos Text", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121615; --panel: #1a201e; --fg: #e6ebe8; --muted: #93a09b; --line: #2b3431;
+  --accent: #5cc4ad; --accent-soft: #1b2e2a; --warn: #e39a62; --warn-soft: #2e231b; --bad: #ec7a7a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121615; --panel: #1a201e; --fg: #e6ebe8; --muted: #93a09b; --line: #2b3431;
+  --accent: #5cc4ad; --accent-soft: #1b2e2a; --warn: #e39a62; --warn-soft: #2e231b; --bad: #ec7a7a; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--sans); margin: 0 }
+.wrap { max-width: 900px; margin: 0 auto; padding-block: 20px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px }
+.wrap > * { min-width: 0 }
+h1 { font-size: 30px; line-height: 1.1; margin: 0; letter-spacing: -.01em }
+h2 { font-size: 19px; margin: 0 0 10px; text-wrap: balance }
+.sub { color: var(--muted); margin: 6px 0 0 }
+.clock { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: baseline; font-family: var(--mono); font-size: 13px; color: var(--muted);
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding-block: 10px; margin-top: 14px }
+.clock b { color: var(--fg); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums }
+.clock .go b { color: var(--accent) }
+.split { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px }
+.split span { font-family: var(--mono); font-size: 12px; border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; background: var(--panel) }
+.split span.main { border-color: var(--accent); color: var(--accent) }
+ul.check { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px }
+ul.check label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px }
+ul.check input { margin-top: 4px; accent-color: var(--accent); width: 16px; height: 16px; flex: none }
+ul.check input:checked + span { color: var(--muted); text-decoration: line-through }
+code, .mono { font-family: var(--mono); font-size: 12.5px }
+code { background: var(--accent-soft); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere }
+.cmd { display: flex; gap: 8px; align-items: stretch; margin-top: 6px }
+.cmd pre { margin: 0; flex: 1; min-width: 0; overflow-x: auto; font: 12px/1.45 var(--mono); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px }
+button { font: 600 12px var(--sans); color: var(--accent); background: var(--panel); border: 1px solid var(--accent); border-radius: 6px; padding: 0 10px; cursor: pointer }
+button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+a { color: var(--accent) }
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel) }
+table { border-collapse: collapse; width: 100%; min-width: 640px }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line) }
+tr:last-child td { border-bottom: 0 }
+th { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted) }
+td.t { font: 600 13px var(--mono); white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--accent) }
+td.n { font-weight: 600; white-space: nowrap }
+td ul { margin: 0; padding-left: 18px }
+.note { color: var(--muted); font-size: 13.5px; margin: 8px 0 0 }
+.letter { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 0 }
+.warnbox { background: var(--warn-soft); border: 1px solid var(--warn); border-radius: 8px; padding: 12px 14px }
+.warnbox h2 { color: var(--warn) }
+.warnbox ul { margin: 0; padding-left: 18px; display: grid; gap: 4px }
+.qa { display: grid; gap: 8px }
+.qa details { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px }
+.qa summary { cursor: pointer; font-weight: 600 }
+.qa details p, .qa details ul { margin: 8px 0 2px }
+.nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px }
+.nums div { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; min-width: 0 }
+.nums b { display: block; font-size: 20px; font-variant-numeric: tabular-nums }
+.nums span { color: var(--muted); font-size: 13px }
+.say { background: var(--panel); border: 2px solid var(--accent); border-radius: 10px; padding: 16px 20px }
+.say ol { margin: 0; padding-left: 22px; display: grid; gap: 10px; font-size: 17px; line-height: 1.5 }
+.say li b { color: var(--accent) }
+.say .order { margin: 12px 0 0; font-size: 14px; color: var(--muted) }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto } }
+</style>
+
+<div class="wrap">
+<header>
+  <h1>Показ Лютика</h1>
+  <p class="sub">Сб 21.11, слот 17:05 МСК (пост Net Tyan 19.11, #1434). Начало 17:00, подключиться раньше. Эта страница только для тебя; зал видит студию, экран «ИИ-артист» и канал.</p>
+  <div class="clock" aria-live="off">
+    <span>МСК <b id="now">--:--:--</b></span>
+    <span id="toLabel">до слота <b id="to">--:--</b></span>
+    <span>Лютик спит до <b>17:31</b>; кнопка будит сразу</span>
+  </div>
+  <div class="split"><span class="main">5 мин — рассказ и демо</span><span>2 мин — отзыв о курсе</span><span>3 мин — вопросы и P2P</span></div>
+</header>
+
+
+<section class="say" aria-labelledby="say-h">
+  <h2 id="say-h">Текст-опора: прочитать один раз</h2>
+  <ol>
+    <li><b>Жму «Пусть запишет песню».</b> Лютик — бард из «Ведьмака», живёт в телеге, у него свой канал. Я дал ему одно письмо: зал смотрит, напиши песню, бюджет доллар. Тему не даю — выберет сам.</li>
+    <li><b>Экран «ИИ-артист».</b> В обычной генерации человек пишет промпт и выбирает лучший вариант. Здесь человек задаёт только рамку — бюджет и срок. Тему, текст, звук, брак и выпуск решает он.</li>
+    <li><b>Схема.</b> Событие — таймер, письмо или человек → Claude решает, что делать → инструмент → проверка → память → сам ставит себе сон. Песня изнутри: текст и замысел → Mureka поёт клоном голоса, два дубля → судья сверяет метки Mureka с замыслом. Годно — выпускает; нет — правит участок или заказывает заново; кончились деньги — сам решает, выпускать ли вопреки судье, и пишет почему.</li>
+    <li><b>Студия, пока поёт.</b> Читаю его мысль вслух. Ночью он сам, без меня, довёл альбом из шести песен.</li>
+    <li><b>«Где слабо».</b> Годный дубль — лотерея: клоном 5 из 63. Голос клона грязный — образец с лайва, моя ошибка. Судья ловит брак, но не вкус. Поручение без меры выполняет до упора — 12 одинаковых постов. Сбой без ошибки — 9 сессий молчал, снаружи всё нормально.</li>
+    <li><b>Дальше.</b> Судья, голос и главный вопрос: нужен автономный агент со своей волей или прикладной, который делает то, что хотим мы.</li>
+  </ol>
+  <p class="order">Экраны: студия (кнопка) → «Студия Лютика» сверху вниз → студия, где идёт песня → канал.</p>
+</section>
+<section aria-labelledby="pre">
+  <h2 id="pre">До старта, 16:55–17:04</h2>
+  <ul class="check">
+    <li><label><input type="checkbox" id="c1"><span>Вкладка терминала с туннелем жива (цикл <code>ssh … -L 8787</code>). Проверка: студия открывается.</span></label></li>
+    <li><label><input type="checkbox" id="c2"><span><a href="http://localhost:8787/studio" target="_blank" rel="noopener">localhost:8787/studio</a>: масштаб 125%, нажата «Включить уведомления», в шапке «спит».</span></label></li>
+    <li><label><input type="checkbox" id="c3"><span><a href="https://claude.ai/artifact/RnDTvBccHyRTxndCdincAa" target="_blank" rel="noopener">«Студия Лютика»</a> открыта на экране «ИИ-артист, а не ИИ-песня» (первый блок).</span></label></li>
+    <li><label><input type="checkbox" id="c4"><span>Открыт <a href="https://t.me/pollveka" target="_blank" rel="noopener">t.me/pollveka</a>: альбом 86–92, репетиция 96.</span></label></li>
+    <li><label><input type="checkbox" id="c5"><span>Толк в Chrome → «Демонстрация» → вкладка «Вкладка Chrome» → студия → тумблер «Также поделиться звуком вкладки». Сменить вкладку: открыть её и нажать «Показать эту вкладку» в полосе сверху. Тумблера нет — звук дать ссылкой на пост.</span></label></li>
+    <li><label><input type="checkbox" id="c6"><span>Кнопку до слота не жать: письмо ляжет, и он начнёт без зала.</span></label></li>
+  </ul>
+</section>
+
+<section aria-labelledby="run">
+  <h2 id="run">5 минут по шагам</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Время</th><th>На экране</th><th>Тезисы</th></tr></thead>
+    <tbody>
+      <tr><td class="t">0:00</td><td>Студия → «Пусть запишет песню»</td><td>Жмёшь первой же фразой: круг ~5:30, иначе не успеет. «Я сейчас дал ему только рамку: зал смотрит, бюджет доллар. Тему не даю».</td></tr>
+      <tr><td class="t">0:05–0:25</td><td>«Студия Лютика» → экран «ИИ-артист»</td><td>Две колонки: в ИИ-песне решает человек, ИИ — кнопка; у Лютика решает он, человек — продюсер с рамкой. Цикл «событие → мысль → действие → проверка → память → сон».</td></tr>
+      <tr><td class="t">~0:22</td><td>Уведомление «Показ курса» → назад в студию</td><td>Проснулся. Это и есть цепочка для курса: событие (письмо) → выбор действия → результат → память.</td></tr>
+      <tr><td class="t">~0:40</td><td>«Сейчас думает»</td><td>Читаешь залу его мысль: какую тему выбрал и почему. На репетиции на это ушло 18 с.</td></tr>
+      <tr><td class="t">~1:00+</td><td>«Текст готов»: карточка текста</td><td>Текст и замысел звука его: «одна лютня, один голос», что нельзя.</td></tr>
+      <tr><td class="t">ожидание</td><td>Студия, этапы</td><td>Пока Mureka поёт: что запускается само и что делаю я (блок ниже). Числа: 5 из 63, 8 из 9.</td></tr>
+      <tr><td class="t">дубль</td><td>«Mureka спела»: плеер</td><td>10–15 секунд звука, не целиком. Про голос честно (блок «Вопросы»).</td></tr>
+      <tr><td class="t">вердикт</td><td>«Судья: …»</td><td>Судья сверяет метки Mureka с его замыслом. «Править» → он сам решает: править участок или заказать заново.</td></tr>
+      <tr><td class="t">~4:50</td><td>Решение</td><td>Кончился доллар — он решает, выпускать ли вопреки судье, и пишет причину. Причину читаешь вслух.</td></tr>
+      <tr><td class="t">~5:30</td><td>«Выпустил песню» → канал</td><td>Пост в канале. Не успел к 5:00 — «доделает сам, пост будет в канале», переходишь к отзыву.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Опорные времена с репетиции 16:24: проснулся за 22 с, тему выбрал за 18 с, бюджет кончился на 4:51, круг 7:29, из них 2 мин — перерисовка обложки после 429; теперь берёт запасную, ожидание ~5:30. Остальные отметки примерные.</p>
+</section>
+
+<section aria-labelledby="auto">
+  <h2 id="auto">Что само, что делаю я</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Само</th><th>Оператор</th></tr></thead>
+    <tbody><tr>
+      <td><ul><li>просыпается по своему таймеру и сам решает, чем заняться</li><li>выбирает тему, пишет текст и замысел звука</li><li>заказывает дубли, слушает судьёй, правит участок или заказывает заново</li><li>решает, выпускать ли, в том числе вопреки судье, с причиной</li><li>ведёт канал, пишет в память, назначает себе сон</li></ul></td>
+      <td><ul><li>рамка в коде: бюджет на песню, лимит заказов в сутки, окно релизов</li><li>письма в ящик: кнопка студии — это письмо в две строки</li><li>ключи и деньги: Claude, fal для Mureka</li><li>правила судьи: калибровка ухом</li></ul></td>
+    </tr></tbody>
+  </table></div>
+  <p class="note">Письмо, которое кладёт кнопка «Пусть запишет песню», целиком (из кода панели):</p>
+  <p class="letter">«Показ курса (время): зал смотрит, пора новой песни. О чём, каким звуком, сколько дублей и выпускать ли её — решай сам. Песня короткая: куплет и припев. Бюджет — $1.0, каждый дубль — через song_check.»</p>
+</section>
+
+<section aria-labelledby="ntf">
+  <h2 id="ntf">Уведомление → что это</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Уведомление</th><th>Что произошло</th><th>Твой ход</th></tr></thead>
+    <tbody>
+      <tr><td class="n">Показ курса</td><td>Он прочёл письмо и начал сессию</td><td>Переключиться в студию</td></tr>
+      <tr><td class="n">Текст готов</td><td>Отдал текст в Mureka</td><td>Показать текст, 1–2 строки вслух</td></tr>
+      <tr><td class="n">Mureka спела</td><td>Пришли дубли (по два за заказ)</td><td>Включить 10–15 с</td></tr>
+      <tr><td class="n">Судья: править / годно</td><td>Вердикт по дублю</td><td>Назвать причину из карточки: хор, барабаны, завывания…</td></tr>
+      <tr><td class="n">Выпустил песню</td><td>Трек с обложкой в канале</td><td>Открыть пост</td></tr>
+      <tr><td class="n">Пост / ЛС</td><td>Пишет в канал или отвечает человеку</td><td>По ситуации; на показе не обязательно</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section aria-labelledby="fail">
+  <h2 id="fail">Если что-то пошло не так</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Что видно</th><th>Что делать</th></tr></thead>
+    <tbody>
+      <tr><td class="n">«Панель не ответила»</td><td>Туннель упал. Цикл во вкладке терминала переподнимет сам, обрыв он замечает до минуты; страница подхватит. Нет цикла — команда ниже в новую вкладку.</td></tr>
+      <tr><td class="n">Не проснулся за минуту</td><td>Не жать повторно. Открыть <code>localhost:8787/studio#last</code>: репетиция 16:24 целиком («Не хлопай — подпевай», пост 96), рассказывать по ней.</td></tr>
+      <tr><td class="n">Mureka молчит &gt; 3 мин</td><td>Говорить про цепочку и числа; к 5:00 — переход к отзыву. Он доделает сам.</td></tr>
+      <tr><td class="n">Anthropic 403</td><td>Ничего не делать: мозг сам уходит на OpenRouter, проверено под живой блокировкой, 4 с.</td></tr>
+      <tr><td class="n">Первый же дубль «годно»</td><td>Выпустит быстро. Освободившееся время — альбом: анонс 86, треки 87–92.</td></tr>
+      <tr><td class="n">Звук не слышен в шаринге</td><td>Не чинить вживую: показать вердикт и метки Mureka, звук дать ссылкой на пост.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="cmd"><pre id="tun">ssh -i &lt;ключ&gt; -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -N -L 8787:127.0.0.1:8787 root@&lt;сервер&gt;</pre><button type="button" id="copy">Копировать</button></div>
+</section>
+
+<section aria-labelledby="qa">
+  <h2 id="qa">Вопросы: опоры для ответа</h2>
+  <div class="qa">
+    <details><summary>«Это же просто промпт и ответ?»</summary>
+      <p>Тему ему никто не давал: письмо выше целиком. Дальше он сам заказал, сам браковал, сам решил выпускать. Альбом из шести песен ночью довёл без человека: бракуя по судье, правил участки, нашёл годные среди непроверенных дублей, подобрал обложки.</p></details>
+    <details><summary>«Почему голос такой?»</summary>
+      <p>Клон голоса Адаева сделан с 25 с лайва на YouTube; голос вырезан из микса, отсюда грязь от комнаты, сжатия и вырезания; завывания — его эстрадная манера. Ошибка выбора образца. После показа — клон с чистой студийной записи.</p></details>
+    <details><summary>«Сколько стоит?»</summary>
+      <p>Дубль с проверкой $0.25: заказ $0.30 на два дубля плюс проверка $0.10 на каждый. Лимит песни на показе $1, это около четырёх дублей. Ход мозга около 3 центов: ночная петля 983 вызова ≈ $30.67.</p></details>
+    <details><summary>«Как работает судья и можно ли ему верить?»</summary>
+      <p>Mureka подписывает дубль метками (инструменты, манера), судья сверяет их с замыслом Лютика: одна запретная метка — «править». На калибровке совпал с моим ухом 8 из 9. Слеп к шейкеру и щелчкам, гитару считает лютней. Ловит брак, вкус не ловит.</p></details>
+    <details><summary>«Что не получилось?»</summary>
+      <ul><li>Доля годных дублей: клоном 5 из 63 (~8%), голосом Mureka без клона 4 из 8. Каждая песня — лотерея: деньги кончаются раньше, чем выпадает годный дубль.</li>
+      <li>Голос клона (выше).</li>
+      <li>Поручение без меры он выполняет до упора: «Канал молчит. Пиши.» дало 12 постов одной колодкой с неверными числами; снесли.</li>
+      <li>Сбой без ошибки: пустой ответ модели цикл принимал за решение «ничего не делать», 9 сессий подряд.</li></ul></details>
+    <details><summary>«Что дальше?»</summary>
+      <ul><li>Калибровка судьи.</li><li>Клон голоса сделать правильно.</li><li>Граница агентности: автономный агент, которому всё равно на наши желания, или прикладной, который делает стоящее.</li><li>Ограничения Mureka и другие варианты.</li><li>Доля годных дублей.</li></ul>
+      <p>Полностью: <span class="mono">учёба/курсы/ии_персонажи/2026-11-21_лютик_что_дальше_и_уроки.md</span></p></details>
+    <details><summary>«Можно ему написать?»</summary>
+      <p>После показа. Письмо посреди песни собьёт его с задачи: он читает всё входящее как повод действовать.</p></details>
+  </div>
+</section>
+
+<section aria-labelledby="num">
+  <h2 id="num">Числа под рукой</h2>
+  <div class="nums">
+    <div><b>6 песен</b><span>альбом «Зерно и гряда»: анонс 05:14, треки 12:32–12:33</span></div>
+    <div><b>5 из 63</b><span>годных дублей клоном; правкой участка 1 из 8</span></div>
+    <div><b>4 из 8</b><span>годных голосом Mureka без клона</span></div>
+    <div><b>8 из 9</b><span>судья совпал с ухом на калибровке</span></div>
+    <div><b>0 из 5</b><span>годных на репетиции 16:24, выпущено вопреки судье</span></div>
+    <div><b>4 с</b><span>переход мозга на запасное звено при 403</span></div>
+  </div>
+</section>
+
+<section class="warnbox" aria-labelledby="no">
+  <h2 id="no">Не делать на показе</h2>
+  <ul>
+    <li>Жать вторую кнопку, пока он пишет песню: новое письмо собьёт его с задачи.</li>
+    <li>Давать залу писать боту.</li>
+    <li>Открывать соцсети в браузере с твоим входом.</li>
+    <li>Обещать качество голоса.</li>
+    <li>Отзыв о курсе (2 мин) — твоими словами: что хорошо, что нет, что улучшить, пошёл бы снова.</li>
+  </ul>
+</section>
+</div>
+
+<script>
+(function () {
+  const fmt = new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  const nowEl = document.getElementById("now"), toEl = document.getElementById("to"), toLabel = document.getElementById("toLabel");
+  function tick() {
+    const parts = fmt.formatToParts(new Date()); const g = t => +parts.find(p => p.type === t).value;
+    const h = g("hour"), m = g("minute"), s = g("second");
+    nowEl.textContent = [h, m, s].map(x => String(x).padStart(2, "0")).join(":");
+    const left = (17 * 3600 + 5 * 60) - (h * 3600 + m * 60 + s);
+    if (left > 0) { toLabel.firstChild.textContent = "до слота "; toLabel.classList.remove("go");
+      toEl.textContent = Math.floor(left / 60) + ":" + String(left % 60).padStart(2, "0"); }
+    else { toLabel.firstChild.textContent = "слот идёт "; toLabel.classList.add("go");
+      const e = -left; toEl.textContent = Math.floor(e / 60) + ":" + String(e % 60).padStart(2, "0"); }
+  }
+  tick(); setInterval(tick, 1000);
+
+  document.querySelectorAll("ul.check input").forEach(cb => {
+    try { cb.checked = localStorage.getItem("cheat-" + cb.id) === "1"; } catch (e) {}
+    cb.addEventListener("change", () => { try { localStorage.setItem("cheat-" + cb.id, cb.checked ? "1" : "0"); } catch (e) {} });
+  });
+
+  const btn = document.getElementById("copy");
+  btn.addEventListener("click", () => {
+    const text = document.getElementById("tun").textContent;
+    const done = () => { btn.textContent = "Скопировано"; setTimeout(() => btn.textContent = "Копировать", 1500); };
+    const fallback = () => { const r = document.createRange(); r.selectNodeContents(document.getElementById("tun"));
+      const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); btn.textContent = "Выделено, ⌘C"; };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+  });
+})();
+</script>
