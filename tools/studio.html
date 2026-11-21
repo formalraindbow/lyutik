@@ -232,32 +232,48 @@ details.orig p { margin: 6px 0 0; font-size: 13px; color: var(--faint); overflow
     return node;
   }
 
+  const built = new Map();                 // key → {sig, node}: неизменный шаг не перестраивается, плееры живут дальше
+  function sigOf(st) {
+    const n = narr[st.key] || narr[st.key + ":p"] || {};
+    return JSON.stringify([n.why, n.did, n.got, st.tools.map(x => x.result == null ? -1 : x.result.length), st.thought.length, st.said.length]);
+  }
   function render() {
-    const list = steps(), diary = $("#diary");
+    const list = steps(), diary = $("#diary"), nodes = [];
     const open = new Set([...document.querySelectorAll("details.orig[open]")].map(d => d.closest(".step")?.dataset.key));
-    diary.replaceChildren();
-    if (!list.length) diary.append(el("div", "empty", order ? "Письмо у Лютика. Он проснётся в течение полуминуты." : "Здесь появится, как Лютик делает песню: от первой мысли до решения."));
+    if (!list.length) nodes.push(el("div", "empty", order ? "Письмо у Лютика. Он проснётся в течение полуминуты." : "Здесь появится, как Лютик делает песню: от первой мысли до решения."));
     list.forEach(st => {
       if (st.kind === "wake") {
         const n = el("div", "step minor"); n.append(el("div", "t", since(st.t)), el("div", "dot"));
         const op = st.e.operator || ""; const th = op.startsWith("Заказ из зала") ? (op.match(/«([^»]+)»/) || [])[1] : null;
         const d = el("div", "did"); d.append(el("span", "act", "проснулся"), el("span", "got", th ? "— заказ зала: «" + th + "»" : op ? "— письмо: " + first(op, 110) : "— " + first(st.e.wake, 80)));
-        const b = el("div", "b"); b.append(d); n.append(b); diary.append(n); if (th) order = th; return;
+        const b = el("div", "b"); b.append(d); n.append(b); nodes.push(n); if (th) order = th; return;
       }
       if (st.kind === "sleep") {
         const n = el("div", "step minor"); n.append(el("div", "t", since(st.t)), el("div", "dot"));
         const d = el("div", "did"); d.append(el("span", "act", "уснул"), el("span", "got", "— на " + (st.e.sleep || "?") + " мин"));
-        const b = el("div", "b"); b.append(d); n.append(b); diary.append(n); return;
+        const b = el("div", "b"); b.append(d); n.append(b); nodes.push(n); return;
       }
-      if (!st.thought.length && !st.said.length && st.tools.length && st.tools.every(x => LOOK.has(x.name)) && !narr[st.key]) {
-        const prev = diary.lastElementChild;     // подряд «перечитал…» — одной строкой
+      const look = !st.thought.length && !st.said.length && st.tools.length && st.tools.every(x => LOOK.has(x.name));
+      if (look && !narr[st.key]) {
+        const prev = nodes[nodes.length - 1];     // подряд «перечитал…» — одной строкой
         if (prev && prev.dataset.look) { prev.querySelector(".act").textContent = "перечитал свои записи"; return; }
       }
-      const node = stepNode(st); node.dataset.key = st.key;
-      if (!st.thought.length && !st.said.length && st.tools.every(x => LOOK.has(x.name))) node.dataset.look = "1";
-      if (open.has(st.key)) node.querySelector("details.orig")?.setAttribute("open", "");
-      diary.append(node);
+      const sig = sigOf(st), was = built.get(st.key);
+      let node = was && was.sig === sig ? was.node : null;
+      if (!node) {
+        node = stepNode(st); node.dataset.key = st.key;
+        if (look) node.dataset.look = "1";
+        if (open.has(st.key)) node.querySelector("details.orig")?.setAttribute("open", "");
+        if (was) node.querySelectorAll("audio").forEach(a => {      // плеер со старого узла — тот же, даже если играет
+          const keep = [...was.node.querySelectorAll("audio")].find(o => o.getAttribute("src") === a.getAttribute("src"));
+          if (keep) a.replaceWith(keep);
+        });
+        if (!was) node.classList.add("fresh");
+        built.set(st.key, { sig, node });
+      }
+      nodes.push(node);
     });
+    diary.replaceChildren(...nodes);
     // сейчас думает: последняя мысль, пересказанная по-русски; пока пересказа нет — его последняя реплика
     const withWhy = list.filter(st => st.kind === "step" && ((narr[nkey(st)] || narr[st.key] || {}).why || st.said.find(cyr)));
     const last = withWhy[withWhy.length - 1], q = $("#nowq");
