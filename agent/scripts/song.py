@@ -349,12 +349,22 @@ def dress(src, cover, title, tmp):
            "-metadata:s:v", "title=Album cover", "-metadata:s:v", "comment=Cover (front)", tagged, soft=True)
     return tagged.read_bytes(), thumb.read_bytes()
 
+def fallback_cover(why):
+    """Запасная обложка (COVER_FALLBACK, путь от корня): 21.11 на репетиции модель обложек ответила 429, релиз упал,
+    а своя перерисовка заняла две минуты. Лютик узнаёт о подмене из ответа."""
+    rel_path = (secrets().get("COVER_FALLBACK") or "").strip()
+    p = ROOT / rel_path if rel_path else None
+    if p and p.exists():
+        print(f"обложка: {why} — взял запасную, {rel_path}")
+        return p
+    return None
+
 def resolve_cover(arg, src, title):
     """Обложка для выпуска: путь к картинке, описание (тогда рисуется) или пусто — обложка песни.
     Назначенная или нарисованная остаётся за песней: её возьмут куски и повторные выпуски."""
     arg = (arg or "").strip()
     if not arg:
-        return cover_of(src)
+        return cover_of(src) or (None if DRY else fallback_cover("у песни своей нет"))
     song_key = entry_for(src).get("of") or rel(src)
     if "\n" not in arg and re.search(r"\.(png|jpe?g|webp)$", arg, re.I):   # путь к картинке; всё прочее — описание
         p = Path(arg)
@@ -372,7 +382,10 @@ def resolve_cover(arg, src, title):
             p = draw.generate(COVER_FRAME.format(desc=arg), "good", COVERS_DIR / f"{Path(song_key).stem}_{now():%H%M%S}.png",
                               model=secrets().get("COVER_MODEL") or COVER_MODEL)
         except draw.DrawError as err:
-            fail(f"обложка не нарисовалась: {err}")
+            fb = fallback_cover(f"не нарисовалась ({str(err)[:80]})")
+            if not fb:
+                fail(f"обложка не нарисовалась: {err}")
+            return fb
         prompt = arg
     if not DRY:
         append_jsonl(SONGS, {"at": now().isoformat(timespec="seconds"), "title": title, "cover_for": song_key,
