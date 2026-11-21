@@ -12,7 +12,7 @@
 /studio — студия вживую для показа: поле заказа и лента того, как он делает песню. Заказ — единственное,
 что панель пишет: письмо оператора state/operator.txt (будит сразу), и только если ящик пуст.
 """
-import argparse, datetime, json, mimetypes, os, re, sys
+import argparse, datetime, json, mimetypes, os, re, sys, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
@@ -207,6 +207,79 @@ def count_lines():
 ORDER_MARK = "Заказ из зала"
 STUDIO_FILE = Path(__file__).with_name("studio.html")
 
+# ── пересказ шагов для студии: его мысль и действие по-русски, одной фразой, для зала ──────────────────────────
+NARR_FILE = ROOT / "logs" / "narration.jsonl"
+NARR, NARR_LOCK = {}, threading.Lock()
+NARRATOR = (
+    "Ты пересказываешь для зрителей, как бард Лютик (персонаж-агент) делает песню. Тебе дают один его шаг: его мысль "
+    "(сводка рассуждения, бывает по-английски), его реплику, что он сделал и что из этого вышло. Ответь только JSON без "
+    'пояснений: {"why": "...", "did": "...", "got": "..."}.\n'
+    "why — одна фраза по-русски от первого лица, его голосом: что он думает и почему делает этот шаг. Только то, что есть "
+    "в мысли или реплике; если их нет — пустая строка.\n"
+    "did — 2–6 слов по-русски: что он сделал, человеческими словами («перечитал записи об альбоме», «написал текст», "
+    "«заказал два дубля», «послушал дубль», «переписал 44–66 секунды», «выпустил песню в канал»). Без путей, имён файлов "
+    "и названий инструментов.\n"
+    "got — одна короткая фраза по-русски: что вышло (вердикт судьи простыми словами — «в припеве подпевает хор, лишняя "
+    "скрипка»; «песня в канале»; ошибку — что помешало). Если результат неважен — пустая строка.\n"
+    "Ничего не выдумывай сверх данных.")
+
+def load_narr():
+    for line in read(NARR_FILE).splitlines():
+        e = parse(line)
+        if e and e.get("key"):
+            NARR[e["key"]] = e
+
+def narrate_one(step):
+    import anthropic
+    s = {}
+    for line in read(SECRETS).splitlines():
+        k, _, v = line.partition("=")
+        s[k.strip()] = v.strip().strip('"')
+    if not s.get("ANTHROPIC_API_KEY"):
+        return None
+    payload = json.dumps({k: step.get(k) for k in ("thought", "said", "actions")}, ensure_ascii=False)[:6000]
+    client = anthropic.Anthropic(api_key=s["ANTHROPIC_API_KEY"], max_retries=1, timeout=40.0)
+    r = client.messages.create(model=s.get("STUDIO_NARRATOR_MODEL") or "claude-sonnet-5-5", max_tokens=1500,
+                               system=NARRATOR, output_config={"effort": "low"},
+                               messages=[{"role": "user", "content": payload}])
+    text = "".join(b.text for b in r.content if b.type == "text")
+    m = re.search(r"\{.*\}", text, re.S)
+    out = parse(m.group(0)) if m else None
+    if not isinstance(out, dict):
+        return None
+    rec = {"key": step["key"], "why": str(out.get("why") or "")[:400], "did": str(out.get("did") or "")[:120],
+           "got": str(out.get("got") or "")[:300]}
+    with NARR_LOCK:
+        NARR[rec["key"]] = rec
+        with NARR_FILE.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return rec
+
+def narrate(steps):
+    """Пересказы шагов: готовые — из кеша, новые — Claude (не больше 6 за раз, параллельно)."""
+    from concurrent.futures import ThreadPoolExecutor
+    out, todo = {}, []
+    for st in steps[:40]:
+        k = str(st.get("key") or "")
+        if not k:
+            continue
+        if k in NARR:
+            out[k] = NARR[k]
+        else:
+            todo.append(st)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for st, rec in zip(todo[:6], pool.map(lambda x: _safe_narrate(x), todo[:6])):
+            if rec:
+                out[st["key"]] = rec
+    return out
+
+def _safe_narrate(step):
+    try:
+        return narrate_one(step)
+    except Exception as e:                       # пересказ — украшение: сбой не роняет панель
+        print(f"пересказ не вышел: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
+
 def studio_start(which):
     """С какой строки журнала показывать студию: последняя сессия по заказу из зала (order) или просто последняя (last)."""
     found, n = None, 0
@@ -283,16 +356,20 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
-        if urlparse(self.path).path != "/api/order" or self.headers.get("X-Studio") != "1":
-            self.send_response(404 if urlparse(self.path).path != "/api/order" else 403)   # свой заголовок: чужая
+        path = urlparse(self.path).path
+        if path not in ("/api/order", "/api/narrate") or self.headers.get("X-Studio") != "1":
+            self.send_response(404 if path not in ("/api/order", "/api/narrate") else 403)   # свой заголовок: чужая
             self.end_headers()                                   # страница без разрешения сервера его не пошлёт
             return
         try:
-            n = min(int(self.headers.get("Content-Length") or 0), 4096)
-            theme = json.loads(self.rfile.read(n).decode("utf-8") or "{}").get("theme")
+            n = min(int(self.headers.get("Content-Length") or 0), 200_000)
+            req = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
         except (ValueError, AttributeError):
-            theme = ""
-        code, body = place_order(theme)
+            req = {}
+        if path == "/api/narrate":
+            code, body = 200, narrate(req.get("steps") or [])
+        else:
+            code, body = place_order(req.get("theme"))
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
@@ -682,6 +759,7 @@ def main():
     ap = argparse.ArgumentParser(description="панель Лютика")
     ap.add_argument("--port", type=int, default=8787)
     a = ap.parse_args()
+    load_narr()
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     print(f"панель Лютика: http://127.0.0.1:{a.port}  (Ctrl+C — закрыть)")
     try:

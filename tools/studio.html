@@ -4,257 +4,297 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Студия Лютика — вживую</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
-/* Студия вживую: сверху заказ и дорожка этапов, ниже лента его ходов — от мысли до решения */
+/* Дневник барда на тёмной сцене: сверху крупно его текущая мысль, ниже — шаги «почему → что сделал → что вышло» */
 :root {
-  --bg: #eef0f2; --surface: #ffffff; --ink: #1d232b; --muted: #5b6672; --rule: #d5dae0;
-  --accent: #12706b; --accent-soft: #e0f0ee;
-  --good: #2e7d4f; --good-soft: #e3f3e9; --bad: #b3261e; --bad-soft: #fbe7e5; --warn: #8a5a00; --warn-soft: #fbf0d9;
-  --display: "Unbounded", "Golos Text", system-ui, sans-serif;
+  --bg: #111418; --surface: #191e24; --surface2: #20262e; --ink: #efeae2; --muted: #9aa3ad; --faint: #66707a; --rule: #2a313a;
+  --amber: #d9a441; --amber-soft: #2e2618; --teal: #5bb8ae; --good: #6cc48f; --good-soft: #17301f; --bad: #ee7b6f; --bad-soft: #36201d;
+  --quote: "Cormorant Garamond", "Georgia", serif;
   --body: "Golos Text", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
 }
-@media (prefers-color-scheme: dark) { :root {
-  --bg: #12161b; --surface: #1a2027; --ink: #e6eaee; --muted: #9aa6b2; --rule: #2a323b;
-  --accent: #4fb3aa; --accent-soft: #163330;
-  --good: #5cc28a; --good-soft: #15301f; --bad: #f07167; --bad-soft: #3a1a18; --warn: #e3b341; --warn-soft: #33290f;
-  color-scheme: dark } }
 * { box-sizing: border-box }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.55 var(--body); padding: 28px max(16px, 3vw) 80px }
-.wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 28px }
-h1 { font: 700 clamp(28px, 4.4vw, 46px)/1.05 var(--display); margin: 6px 0 0; letter-spacing: -0.01em }
-.label { font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted) }
-.status { margin-top: 10px; font-size: 15px; color: var(--muted) }
-.status b { color: var(--ink); font-weight: 600 }
-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch }
-form input { flex: 1 1 360px; min-width: 0; font: 500 20px/1.3 var(--body); padding: 14px 16px; border-radius: 12px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink) }
-form button { font: 600 18px/1 var(--body); padding: 14px 22px; border-radius: 12px; border: 0; background: var(--accent); color: var(--surface); cursor: pointer }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.55 var(--body); padding: 26px max(16px, 3vw) 90px }
+.wrap { max-width: 1060px; margin: 0 auto; display: grid; gap: 26px }
+.label { font: 500 12px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--faint) }
+header { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; justify-content: space-between }
+h1 { margin: 6px 0 0; font: 600 clamp(34px, 4.6vw, 52px)/1 var(--quote); letter-spacing: .01em }
+.meta { font-size: 15px; color: var(--muted); text-align: right }
+.meta b { color: var(--ink); font-weight: 600 }
+form { display: flex; flex-wrap: wrap; gap: 10px }
+form input { flex: 1 1 360px; min-width: 0; font: 500 19px/1.3 var(--body); padding: 13px 16px; border-radius: 12px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink) }
+form button { font: 600 17px/1 var(--body); padding: 13px 22px; border-radius: 12px; border: 0; background: var(--amber); color: #1b1408; cursor: pointer }
 form button:disabled { opacity: .5; cursor: default }
-form input:focus-visible, form button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
-.frame { font-size: 14px; color: var(--muted); max-width: 80ch }
-.track { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px }
-.stage { padding: 10px 8px; border-radius: 10px; background: var(--surface); border: 1px solid var(--rule); text-align: center; font: 500 13px/1.25 var(--body); color: var(--muted) }
-.stage.done { color: var(--ink); border-color: var(--accent) }
-.stage.now { background: var(--accent); border-color: var(--accent); color: var(--surface) }
-.stage .t { display: block; font: 400 11px/1 var(--mono); margin-top: 5px; opacity: .8; font-variant-numeric: tabular-nums }
-@media (max-width: 760px) { .track { grid-template-columns: repeat(4, minmax(0, 1fr)) } }
-.feed { display: grid; gap: 10px }
-.ev { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 12px; align-items: start }
-.ev .time { font: 400 12px/1.6 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 2px }
-.ev .body { min-width: 0; display: grid; gap: 6px }
-.said { font-size: 19px; line-height: 1.5; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 12px 16px }
-.thought { font-size: 14px; color: var(--muted); font-style: italic; overflow-wrap: anywhere }
-.act { font-size: 15px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline }
-.act .what { font: 500 12px/1 var(--mono); color: var(--accent); text-transform: uppercase; letter-spacing: .06em }
-.act .sub { color: var(--muted); overflow-wrap: anywhere; min-width: 0 }
-.card { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; min-width: 0 }
-.card.song { border-color: var(--accent) }
-.card h3 { margin: 0; font: 500 18px/1.3 var(--display) }
-.en { font: 400 13px/1.5 var(--mono); color: var(--muted); overflow-wrap: anywhere }
-pre.lyrics { margin: 0; white-space: pre-wrap; font: 16px/1.55 var(--body); max-height: 360px; overflow: auto; padding: 10px 12px; background: var(--bg); border-radius: 8px }
-.timer { font: 500 15px/1 var(--mono); color: var(--accent) }
-.pill { font: 600 13px/1 var(--mono); padding: 6px 10px; border-radius: 999px; white-space: nowrap }
+form input:focus-visible, form button:focus-visible, summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px }
+.frame { font-size: 14px; color: var(--faint); max-width: 90ch; margin: 0 }
+.now { background: linear-gradient(180deg, var(--surface2), var(--surface)); border: 1px solid var(--rule); border-radius: 18px; padding: 22px 26px 20px; display: grid; gap: 10px; min-height: 150px }
+.now .q { font: italic 500 clamp(26px, 3.1vw, 36px)/1.25 var(--quote); color: var(--ink); text-wrap: balance }
+.now .q.idle { color: var(--faint) }
+.now .foot { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--faint) }
+.track { display: flex; flex-wrap: wrap; gap: 6px; align-items: center }
+.stage { font: 500 13px/1 var(--body); color: var(--faint); padding: 8px 12px; border-radius: 999px; border: 1px solid var(--rule) }
+.stage.done { color: var(--ink); border-color: #3a434e }
+.stage.now { color: #1b1408; background: var(--amber); border-color: var(--amber) }
+.sep { color: var(--rule) }
+.diary { position: relative; display: grid; gap: 4px }
+.diary::before { content: ""; position: absolute; left: 66px; top: 6px; bottom: 6px; width: 1px; background: var(--rule) }
+.step { display: grid; grid-template-columns: 56px 20px minmax(0, 1fr); gap: 0 10px; align-items: start; padding: 10px 0 }
+.step .t { font: 400 12px/1.9 var(--mono); color: var(--faint); text-align: right; font-variant-numeric: tabular-nums }
+.step .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--bg); border: 2px solid #4a5460; margin: 7px 0 0 5px; position: relative; z-index: 1 }
+.step.big .dot { border-color: var(--teal) }
+.step.decision .dot { border-color: var(--amber); background: var(--amber) }
+.step .b { display: grid; gap: 8px; min-width: 0 }
+.why { font: italic 500 23px/1.35 var(--quote); color: var(--ink) }
+.why.wait { color: var(--faint); font-size: 19px }
+.did { font-size: 15px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline }
+.did .act { color: var(--teal); font-weight: 500 }
+.did .got { color: var(--muted) }
+.minor .did { font-size: 14px; color: var(--faint) }
+.minor .did .act { color: var(--faint); font-weight: 400 }
+.card { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 14px 18px; display: grid; gap: 10px; min-width: 0 }
+.lyrics h3 { margin: 0; font: 600 24px/1.2 var(--quote) }
+.lyrics .want { font-size: 14px; color: var(--muted) }
+.lyrics pre { margin: 0; white-space: pre-wrap; font: 500 19px/1.5 var(--quote); color: var(--ink); max-height: 420px; overflow: auto }
+.timer { font: 500 14px/1 var(--mono); color: var(--amber) }
+.take { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: center }
+.take audio { width: 100%; height: 36px }
+.pill { font: 600 12px/1 var(--mono); padding: 6px 10px; border-radius: 999px; white-space: nowrap }
 .pill.good { color: var(--good); background: var(--good-soft) } .pill.bad { color: var(--bad); background: var(--bad-soft) }
-.reasons { display: grid; gap: 3px; font-size: 15px }
-.reasons .bad { color: var(--bad) } .reasons .warn { color: var(--warn) }
-audio { width: 100%; height: 38px }
-.take { display: grid; gap: 4px }
-.take .name { font: 400 12px/1.3 var(--mono); color: var(--muted); overflow-wrap: anywhere }
-.small { font-size: 13px; color: var(--muted) }
-.empty { padding: 26px; text-align: center; color: var(--muted); border: 1px dashed var(--rule); border-radius: 12px }
-a { color: var(--accent) }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }
+.take .why2 { grid-column: 1 / -1; font-size: 14px; color: var(--muted) }
+.decision .card.dec { border-color: var(--amber); background: var(--amber-soft) }
+.dec a { color: var(--amber) }
+img.cover { width: 200px; max-width: 100%; border-radius: 10px; border: 1px solid var(--rule) }
+details.orig summary { font-size: 12px; color: var(--faint); cursor: pointer; list-style: none }
+details.orig summary::-webkit-details-marker { display: none }
+details.orig p { margin: 6px 0 0; font-size: 13px; color: var(--faint); overflow-wrap: anywhere }
+.empty { padding: 30px; text-align: center; color: var(--faint); border: 1px dashed var(--rule); border-radius: 14px }
+.note { font-size: 12px; color: var(--faint) }
+@media (max-width: 700px) { .diary::before { left: 46px } .step { grid-template-columns: 38px 20px minmax(0, 1fr) } }
+@media (prefers-reduced-motion: no-preference) { .fresh { animation: rise .5s ease-out } @keyframes rise { from { opacity: .35; transform: translateY(6px) } to { opacity: 1; transform: none } } }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <div class="label">Лютик · бард из «Ведьмака» · студия вживую</div>
-    <h1>Студия Лютика</h1>
-    <div class="status" id="status">Смотрю, чем он занят…</div>
+    <div>
+      <div class="label">Лютик · бард из «Ведьмака» · студия вживую</div>
+      <h1>Студия Лютика</h1>
+    </div>
+    <div class="meta" id="meta">Смотрю, чем он занят…</div>
   </header>
 
-  <section style="display:grid;gap:10px">
+  <section style="display:grid;gap:8px">
     <form id="order">
-      <input id="theme" name="theme" maxlength="200" autocomplete="off" placeholder="О чём песня? Тему даёт зал">
+      <input id="theme" maxlength="200" autocomplete="off" placeholder="О чём песня? Тему даёт зал">
       <button id="go" type="submit">Заказать</button>
     </form>
-    <p class="frame" id="frame">Лютик получает только тему и рамку: «как — решай сам: что прочитать, о чём петь, каким звуком, сколько дублей и выпускать ли её; песня короткая, бюджет $1.0, каждый дубль — через судью». Дальше всё решает он.</p>
+    <p class="frame" id="frame">Лютик получает только тему: «как — решай сам: что прочитать, о чём петь, каким звуком, сколько дублей и выпускать ли её». Дальше всё решает он.</p>
   </section>
 
-  <section class="track" id="track" aria-label="Этапы песни"></section>
+  <section class="now" aria-live="polite">
+    <div class="label">Сейчас думает</div>
+    <div class="q idle" id="nowq">Ждёт заказа.</div>
+    <div class="foot"><span id="nowt"></span><span>его мысль — пересказ по-русски</span></div>
+  </section>
 
-  <section class="feed" id="feed" aria-live="polite"></section>
+  <nav class="track" id="track" aria-label="Этапы песни"></nav>
+
+  <section class="diary" id="diary"></section>
 </div>
 
 <script>
 (function () {
-  const STAGES = ["замысел", "поиск", "текст", "Mureka поёт", "дубли", "судья", "решение", "память"];
-  const SEARCH = new Set(["canon_search", "canon_read", "web_search", "web_read", "music_search", "music_get", "music_lyrics", "music_chart", "music_library", "listen", "look", "news"]);
-  const PEEK = new Set(["comments", "dms", "channel_info", "polls", "news", "follow", "describe_channel"]);
-  const SLOW = new Set(["song", "song_check", "song_edit", "song_remix", "release", "post_song", "song_snippet", "web_read", "listen", "draw", "sing", "lute"]);
-  let after = -1, events = [], startT = null, order = null;
+  const STAGES = ["замысел", "поиск", "текст", "Mureka поёт", "дубли", "судья", "решение"];
+  const LOOK = new Set(["read_file", "list_dir", "comments", "dms", "news", "channel_info", "polls", "follow", "describe_channel", "tidy"]);
+  const SEARCH = new Set(["canon_search", "canon_read", "web_search", "web_read", "music_search", "music_get", "music_lyrics", "music_chart", "listen", "look"]);
+  const HUMAN = { read_file: "перечитал записи", list_dir: "заглянул в свои папки", comments: "заглянул в комментарии", dms: "проверил личку",
+    news: "полистал ленту", channel_info: "посмотрел на канал", canon_search: "поискал в книгах", canon_read: "перечитал книгу",
+    web_search: "поискал в сети", web_read: "прочитал страницу", song: "заказал песню", song_check: "послушал дубль",
+    song_edit: "переписал участок", song_remix: "сменил звук", draw: "нарисовал обложку", release: "выпустил песню",
+    post_song: "выложил песню", post: "написал пост", remember: "записал в память", write_file: "записал в память",
+    sleep: "уснул", ticket: "написал разработчику", lute: "сыграл на лютне", sing: "спел под лютню" };
+  let after = -1, events = [], order = null, startT = null;
+  const narr = {}, inflight = new Set();
   const $ = s => document.querySelector(s);
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const hhmmss = t => String(t || "").slice(11, 19);
-  const since = t => { if (!startT || !t) return ""; const s = Math.max(0, Math.round((new Date(t) - new Date(startT)) / 1000)); return "+" + Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
-  const mp3s = s => [...new Set((String(s || "").match(/agent\/lyutik\/media\/[^\s,;»"']+\.mp3/g) || []))];
-  const src = p => "/media/" + p.replace(/^agent\/lyutik\/media\//, "").split("/").map(encodeURIComponent).join("/");
+  const since = t => { if (!startT || !t) return ""; const s = Math.max(0, Math.round((new Date(t) - new Date(startT)) / 1000)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
   const first = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n) + "…" : s; };
+  const media = p => "/media/" + String(p).replace(/^agent\/lyutik\/media\//, "").split("/").map(encodeURIComponent).join("/");
+  const files = (s, ext) => [...new Set((String(s || "").match(new RegExp("agent/lyutik/media/[^\\s,;»\"']+\\." + ext, "g")) || []))];
+  const cyr = s => /[А-Яа-яЁё]/.test(s || "");
 
-  function player(p) {
-    const t = el("div", "take"); t.append(el("span", "name", p.split("/").pop()));
-    const a = el("audio"); a.controls = true; a.preload = "none"; a.src = src(p); t.append(a); return t;
+  function steps() {
+    const out = [], idx = {}; let sess = -1;
+    events.forEach(e => {
+      if (e.kind === "session") { sess++; out.push({ kind: "wake", e, t: e.t }); startT = startT || e.t; return; }
+      if (e.kind === "session_end") { out.push({ kind: "sleep", e, t: e.t }); return; }
+      if (e.step == null || !["thought", "said", "tool_start", "tool"].includes(e.kind)) return;
+      const key = sess + ":" + e.step;
+      let st = idx[key];
+      if (!st) { st = idx[key] = { kind: "step", key, t: e.t, thought: [], said: [], tools: [] }; out.push(st); }
+      if (e.kind === "thought") st.thought.push(e.text);
+      else if (e.kind === "said") st.said.push(e.text.trim());
+      else if (e.kind === "tool_start") st.tools.push({ name: e.name, args: e.args || {}, t: e.t, result: null });
+      else { const open = st.tools.find(x => x.name === e.name && x.result == null); if (open) { open.result = String(e.result || ""); open.end = e.t; } else st.tools.push({ name: e.name, args: e.args || {}, t: e.t, result: String(e.result || ""), end: e.t }); }
+    });
+    const lastStep = out.filter(x => x.kind === "step").pop();
+    out.forEach(st => { if (st.kind === "step") st.done = st.tools.every(x => x.result != null) && (st !== lastStep || out[out.length - 1].kind === "sleep" || st.tools.length > 0); });
+    return out;
+  }
+  const nkey = st => st.done ? st.key : st.key + ":p";
+  const argsum = x => { const a = x.args; if (x.name === "song") return "«" + (a.title || "") + "»: " + first(a.want || a.sound, 160);
+    if (x.name === "song_edit") return (a.start || "") + "–" + (a.end || "") + " с";
+    return first(a.query || a.title || a.caption || a.text || (a.path || "").split("/").pop() || a.name || "", 120); };
+  const payload = st => ({ key: nkey(st), thought: first(st.thought.join(" "), 1500), said: first(st.said.join(" "), 600),
+    actions: st.tools.map(x => x.name + " (" + argsum(x) + ")" + (x.result != null ? " ⇒ " + first(x.result, 360) : " ⇒ ещё идёт")) });
+
+  async function fetchNarr(list) {
+    const want = list.filter(st => st.kind === "step" && !narr[nkey(st)] && !inflight.has(nkey(st)) && (st.thought.length || st.said.length || st.tools.length)).slice(-6);
+    if (!want.length) return;
+    want.forEach(st => inflight.add(nkey(st)));
+    try {
+      const r = await fetch("/api/narrate", { method: "POST", headers: { "Content-Type": "application/json", "X-Studio": "1" }, body: JSON.stringify({ steps: want.map(payload) }) });
+      const d = await r.json(); Object.assign(narr, d);
+    } catch (e) {}
+    want.forEach(st => inflight.delete(nkey(st)));
+    render();
   }
 
-  function verdictBlock(text, path) {
-    const box = el("div", "card");
-    const good = /— ГОДНО/.test(text), head = el("div", "act");
-    head.append(el("span", "pill " + (good ? "good" : "bad"), good ? "судья: годно" : "судья: править"));
-    const title = (text.match(/^«([^»]+)»/) || [])[1];
-    if (title) head.append(el("span", "sub", "«" + title + "»"));
-    box.append(head);
-    if (path) box.append(player(path));
-    const rs = el("div", "reasons");
-    (text.split("\n").slice(1).join(" ").match(/(Нельзя, а звучит:[^.]*\.|Нужно, а не звучит:[^.]*\.|Сомнительно[^.]*:[^.]*\.)/g) || [])
-      .forEach(x => rs.append(el("span", /^Сомнительно/.test(x) ? "warn" : "bad", x)));
-    if (rs.childNodes.length) box.append(rs);
-    return box;
+  function stageOf(list) {
+    const r = {}; let afterCheck = false, pendingSong = false;
+    const m = (s, t) => { if (!r[s]) r[s] = t; };
+    list.forEach(st => { if (st.kind !== "step") return;
+      if (st.thought.length || st.said.length) m("замысел", st.t);
+      st.tools.forEach(x => {
+        if (SEARCH.has(x.name)) m("поиск", x.t);
+        if (x.name === "song") { m("текст", x.t); m("Mureka поёт", x.t); if (x.result == null) pendingSong = true; else m("дубли", x.end); }
+        if (x.name === "song_check" && x.result != null) { m("судья", x.end); afterCheck = true; }
+        if (["release", "post_song", "post"].includes(x.name) && x.result != null) m("решение", x.end);
+      });
+    });
+    return { r, now: pendingSong ? "Mureka поёт" : STAGES.filter(s => r[s]).pop() };
   }
 
-  function row(e, body) {
-    const r = el("div", "ev"); const tm = el("div", "time"); tm.append(hhmmss(e.t)); tm.append(el("br")); tm.append(since(e.t));
-    r.append(tm, body); return r;
+  function takeRow(path, verdictText) {
+    const row = el("div", "take");
+    const a = el("audio"); a.controls = true; a.preload = "none"; a.src = media(path); row.append(a);
+    if (verdictText != null) {
+      const good = /— ГОДНО/.test(verdictText);
+      row.append(el("span", "pill " + (good ? "good" : "bad"), good ? "судья: годно" : "судья: править"));
+      const why = (verdictText.match(/Нельзя, а звучит:[^.]*\.|Нужно, а не звучит:[^.]*\./g) || []).join(" ");
+      if (why) row.append(el("div", "why2", why));
+    }
+    return row;
+  }
+
+  function stepNode(st) {
+    const n = narr[st.key] || narr[st.key + ":p"] || {};
+    const big = st.tools.some(x => !LOOK.has(x.name) && x.name !== "sleep");
+    const dec = st.tools.some(x => ["release", "post_song", "post"].includes(x.name) && x.result && !/^ошибка|не вышло|не опубликовано/.test(x.result));
+    const node = el("div", "step" + (big ? " big" : " minor") + (dec ? " decision" : ""));
+    node.append(el("div", "t", since(st.t)), el("div", "dot"));
+    const b = el("div", "b");
+    const why = n.why || (st.said.find(cyr) || "");
+    if (why) b.append(el("div", "why", "«" + why.replace(/^«|»$/g, "") + "»"));
+    else if (st.thought.length && !n.did) b.append(el("div", "why wait", "думает…"));
+    const did = el("div", "did");
+    did.append(el("span", "act", n.did || [...new Set(st.tools.map(x => HUMAN[x.name] || x.name))].join(", ")));
+    if (n.got) did.append(el("span", "got", "— " + n.got));
+    if (st.tools.length || n.did) b.append(did);
+    st.tools.forEach(x => {
+      if (x.name === "song") {
+        const c = el("div", "card lyrics");
+        c.append(el("div", "label", "текст песни"), el("h3", null, "«" + (x.args.title || "") + "»"));
+        if (x.args.want) c.append(el("div", "want", x.args.want));
+        if (x.args.lyrics) c.append(el("pre", null, x.args.lyrics.replace(/^\[[^\]]+\]\s*$/gm, "").replace(/\n{3,}/g, "\n\n").trim()));
+        if (x.result == null) { const t = el("span", "timer", "Mureka поёт…"); t.dataset.since = x.t; c.append(t); }
+        else files(x.result, "mp3").filter(p => !/\.full\.mp3$/.test(p)).forEach(p => c.append(takeRow(p)));
+        b.append(c);
+      } else if (x.name === "song_check" && x.result != null && x.args.path) {
+        const c = el("div", "card"); c.append(takeRow(x.args.path, x.result)); b.append(c);
+      } else if ((x.name === "song_edit" || x.name === "song_remix") && x.result != null) {
+        const f = files(x.result, "mp3"); if (f.length) { const c = el("div", "card"); f.forEach(p => c.append(takeRow(p))); b.append(c); }
+      } else if (x.name === "draw" && x.result != null) {
+        files(x.result, "(?:png|jpg|jpeg|webp)").slice(0, 1).forEach(p => { const i = el("img", "cover"); i.src = media(p); i.alt = "обложка"; b.append(i); });
+      } else if (["release", "post_song", "post"].includes(x.name) && x.result != null && !/^ошибка|не вышло|не опубликовано/.test(x.result)) {
+        const c = el("div", "card dec"); c.append(el("div", "label", "решение"));
+        const link = (x.result.match(/https:\/\/t\.me\/\S+?(?=[\s;,]|$)/) || [])[0];
+        if (x.args.caption) c.append(el("div", null, x.args.caption));
+        if (x.args.despite) c.append(el("div", "note", "вопреки судье: " + x.args.despite));
+        if (link) { const a = el("a", null, link); a.href = link; a.target = "_blank"; a.rel = "noopener"; c.append(a); }
+        b.append(c);
+      }
+    });
+    if (st.thought.length) { const d = el("details", "orig"); d.append(el("summary", null, "его мысль как есть")); d.append(el("p", null, first(st.thought.join(" "), 900))); b.append(d); }
+    node.append(b);
+    return node;
   }
 
   function render() {
-    const feed = $("#feed"); feed.replaceChildren();
-    const pending = new Map();
-    const reached = {}; let afterCheck = false, songPending = false;
-    const mark = (st, t) => { if (!reached[st]) reached[st] = t; };
-    if (!events.length) { feed.append(el("div", "empty", order ? "Письмо у Лютика. Он проснётся в течение полуминуты — дальше всё видно здесь." : "Здесь появится, как Лютик делает песню: от первой мысли до решения.")); }
-    events.forEach(e => {
-      const k = e.kind;
-      if (k === "session") {
-        startT = startT || e.t;
-        const b = el("div", "body"); const a = el("div", "act");
-        a.append(el("span", "what", "проснулся"), el("span", "sub", e.operator ? first(e.operator, 160) : (e.wake || "")));
-        b.append(a); feed.append(row(e, b)); return;
+    const list = steps(), diary = $("#diary");
+    const open = new Set([...document.querySelectorAll("details.orig[open]")].map(d => d.closest(".step")?.dataset.key));
+    diary.replaceChildren();
+    if (!list.length) diary.append(el("div", "empty", order ? "Письмо у Лютика. Он проснётся в течение полуминуты." : "Здесь появится, как Лютик делает песню: от первой мысли до решения."));
+    list.forEach(st => {
+      if (st.kind === "wake") {
+        const n = el("div", "step minor"); n.append(el("div", "t", since(st.t)), el("div", "dot"));
+        const op = st.e.operator || ""; const th = (op.match(/«([^»]+)»/) || [])[1];
+        const d = el("div", "did"); d.append(el("span", "act", "проснулся"), el("span", "got", th ? "— заказ зала: «" + th + "»" : "— " + first(op || st.e.wake, 120)));
+        const b = el("div", "b"); b.append(d); n.append(b); diary.append(n); if (th) order = th; return;
       }
-      if (k === "said") { mark("замысел", e.t); const b = el("div", "body"); b.append(el("div", "said", e.text.trim())); feed.append(row(e, b)); if (afterCheck) mark("решение", e.t); return; }
-      if (k === "thought") { mark("замысел", e.t); const b = el("div", "body"); b.append(el("div", "thought", "мысль: " + first(e.text, 260))); feed.append(row(e, b)); return; }
-      if (k === "tool_start") {
-        if (SEARCH.has(e.name)) mark("поиск", e.t);
-        if (e.name === "song") {
-          mark("текст", e.t); mark("Mureka поёт", e.t);
-          const c = el("div", "card song"); const a = e.args || {};
-          c.append(el("div", "label", "заказ Mureka"), el("h3", null, "«" + (a.title || "без названия") + "»"));
-          if (a.want) c.append(el("div", null, a.want));
-          if (a.avoid) c.append(el("div", "small", "Нельзя: " + a.avoid));
-          if (a.sound) c.append(el("div", "en", a.sound));
-          if (a.lyrics) c.append(el("pre", "lyrics", a.lyrics));
-          const tmr = el("span", "timer", "поёт…"); tmr.dataset.since = e.t; c.append(tmr);
-          pending.set(e.step + ":" + e.name, tmr); feed.append(row(e, c)); return;
-        }
-        if (SLOW.has(e.name)) {
-          const a = el("div", "act"); a.append(el("span", "what", e.name === "song_check" ? "слушает дубль" : e.name), el("span", "sub", first((e.args && (e.args.path || e.args.query || e.args.url || e.args.title)) || "", 120)));
-          const tmr = el("span", "timer", "…"); tmr.dataset.since = e.t; a.append(tmr);
-          pending.set(e.step + ":" + e.name, tmr); const b = el("div", "body"); b.append(a); feed.append(row(e, b));
-        }
-        return;
+      if (st.kind === "sleep") {
+        const n = el("div", "step minor"); n.append(el("div", "t", since(st.t)), el("div", "dot"));
+        const d = el("div", "did"); d.append(el("span", "act", "уснул"), el("span", "got", "— на " + (st.e.sleep || "?") + " мин"));
+        const b = el("div", "b"); b.append(d); n.append(b); diary.append(n); return;
       }
-      if (k === "tool") {
-        const key = e.step + ":" + e.name, tmr = pending.get(key);
-        if (tmr) { tmr.textContent = "готово"; delete tmr.dataset.since; pending.delete(key); }
-        const r = String(e.result || ""), a = e.args || {}, b = el("div", "body");
-        if (e.name === "song" || e.name === "song_edit" || e.name === "song_remix") {
-          mark("дубли", e.t); const c = el("div", "card"); const takes = mp3s(r).filter(p => !/\.full\.mp3$/.test(p));
-          const head = el("div", "act");
-          if (takes.length) head.append(el("span", "what", e.name === "song" ? "Mureka спела" : "правка готова"), el("span", "sub", "«" + (a.title || (r.match(/«([^»]+)»/) || [])[1] || "") + "» — дублей: " + takes.length));
-          else head.append(el("span", "sub", first(r, 220)));       // отказ или ошибка — как есть
-          c.append(head); takes.forEach(p => c.append(player(p))); b.append(c);
-        } else if (e.name === "song_check") {
-          mark("судья", e.t); afterCheck = true; b.append(verdictBlock(r, a.path));
-        } else if (["release", "post", "post_song", "song_snippet", "post_photo"].includes(e.name)) {
-          mark("решение", e.t); const x = el("div", "act"); x.append(el("span", "what", "выпустил"));
-          const link = (r.match(/https:\/\/t\.me\/\S+/) || [])[0];
-          if (link) { const l = el("a", null, link); l.href = link; l.target = "_blank"; l.rel = "noopener"; x.append(l); } else x.append(el("span", "sub", first(r, 200)));
-          b.append(x);
-        } else if (e.name === "remember" || (e.name === "write_file" && /memory|GOALS|state\.md/.test(a.path || ""))) {
-          if (afterCheck) mark("память", e.t);
-          const x = el("div", "act"); x.append(el("span", "what", "запомнил"), el("span", "sub", first((a.name ? a.name + ": " : (a.path || "") + ": ") + (a.text || a.content || ""), 220))); b.append(x);
-        } else if (SEARCH.has(e.name)) {
-          mark("поиск", e.t); const x = el("div", "act"); x.append(el("span", "what", e.name.replace("_", " ")), el("span", "sub", first(a.query || a.url || a.path || a.track || "", 120) + " — " + first(r, 160))); b.append(x);
-        } else if (e.name === "read_file" || e.name === "list_dir") {
-          const x = el("div", "act"); x.append(el("span", "what", "листает"), el("span", "sub", a.path || "")); b.append(x);
-        } else if (e.name === "sleep") {
-          const x = el("div", "act"); x.append(el("span", "what", "уснул"), el("span", "sub", (a.minutes || "") + " мин")); b.append(x);
-        } else if (e.name === "ticket") {
-          const x = el("div", "act"); x.append(el("span", "what", "написал разработчику"), el("span", "sub", first(a.text, 200))); b.append(x);
-        } else if (afterCheck && ["song", "song_edit", "song_remix"].includes(e.name)) {
-          mark("решение", e.t);
-        } else {
-          const x = el("div", "act"); x.append(el("span", "what", PEEK.has(e.name) ? "заглянул" : e.name), el("span", "sub", PEEK.has(e.name) ? e.name : first(r, 140))); b.append(x);
-        }
-        if (afterCheck && ["song", "song_edit", "song_remix"].includes(e.name) && reached["судья"] && e.t > reached["судья"]) mark("решение", e.t);
-        feed.append(row(e, b)); return;
+      if (!st.thought.length && !st.said.length && st.tools.length && st.tools.every(x => LOOK.has(x.name)) && !narr[st.key]) {
+        const prev = diary.lastElementChild;     // подряд «перечитал…» — одной строкой
+        if (prev && prev.dataset.look) { prev.querySelector(".act").textContent = "перечитал свои записи"; return; }
       }
-      if (k === "session_end") {
-        const b = el("div", "body"); const x = el("div", "act");
-        x.append(el("span", "what", "сессия окончена"), el("span", "sub", `постов ${(e.posts || []).length}, сон ${e.sleep || 0} мин`)); b.append(x); feed.append(row(e, b));
-      }
+      const node = stepNode(st); node.dataset.key = st.key;
+      if (!st.thought.length && !st.said.length && st.tools.every(x => LOOK.has(x.name))) node.dataset.look = "1";
+      if (open.has(st.key)) node.querySelector("details.orig")?.setAttribute("open", "");
+      diary.append(node);
     });
-    songPending = [...pending.keys()].some(k => k.endsWith(":song"));
-    const track = $("#track"); track.replaceChildren();
-    const order_ = STAGES.filter(s => reached[s]); const now = songPending ? "Mureka поёт" : order_[order_.length - 1];
-    STAGES.forEach(s => { const d = el("div", "stage" + (s === now ? " now" : reached[s] ? " done" : "")); d.append(s); if (reached[s]) d.append(el("span", "t", since(reached[s]))); track.append(d); });
+    // сейчас думает: последняя мысль, пересказанная по-русски; пока пересказа нет — его последняя реплика
+    const withWhy = list.filter(st => st.kind === "step" && ((narr[nkey(st)] || narr[st.key] || {}).why || st.said.find(cyr)));
+    const last = withWhy[withWhy.length - 1], q = $("#nowq");
+    if (last) { const n = narr[nkey(last)] || narr[last.key] || {}; const w = n.why || last.said.find(cyr); q.textContent = "«" + w.replace(/^«|»$/g, "") + "»"; q.className = "q"; $("#nowt").textContent = since(last.t); }
+    else { q.textContent = list.length ? "думает…" : "Ждёт заказа."; q.className = "q idle"; }
+    const s = stageOf(list), tr = $("#track"); tr.replaceChildren();
+    STAGES.forEach((x, i) => { if (i) tr.append(el("span", "sep", "—")); tr.append(el("span", "stage" + (x === s.now ? " now" : s.r[x] ? " done" : ""), x)); });
+    fetchNarr(list);
   }
 
   function tick() {
-    document.querySelectorAll(".timer[data-since]").forEach(t => {
-      const s = Math.max(0, Math.round((Date.now() - new Date(t.dataset.since)) / 1000));
-      t.textContent = (t.closest(".song") ? "Mureka поёт " : "") + Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
-    });
+    document.querySelectorAll(".timer[data-since]").forEach(t => { const s = Math.max(0, Math.round((Date.now() - new Date(t.dataset.since)) / 1000)); t.textContent = "Mureka поёт " + Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); });
   }
-
   async function poll() {
     if (after < 0) return;
-    try {
-      const r = await fetch("/api/events?after=" + after); const d = await r.json();
-      const fresh = d.events.filter(e => !["calling", "note", "start", "sleeping", "vote"].includes(e.kind));
-      after = d.next;
-      if (fresh.length) { events = events.concat(fresh); render(); }
-    } catch (e) {}
+    try { const d = await (await fetch("/api/events?after=" + after)).json(); after = d.next;
+      const fresh = d.events.filter(e => ["session", "session_end", "thought", "said", "tool_start", "tool"].includes(e.kind));
+      if (fresh.length) { events = events.concat(fresh); render(); } } catch (e) {}
   }
-
   async function snap() {
-    try {
-      const d = await (await fetch("/api/snapshot")).json(); const s = d.status || {}, st = $("#status"); st.replaceChildren();
+    try { const d = await (await fetch("/api/snapshot")).json(), s = d.status || {}, m = $("#meta"); m.replaceChildren();
       const say = { sleeping: "спит" + (s.until ? " до " + String(s.until).slice(11, 16) : ""), thinking: "думает", acting: "работает", stopped: "остановлен", starting: "просыпается", error: "сбой" }[s.state] || s.state;
-      st.append("Сейчас Лютик "); st.append(el("b", null, say));
-      if (d.operator_pending) st.append(" · письмо в ящике, он его ещё не прочёл");
+      if (order) { m.append("заказ: "); m.append(el("b", null, "«" + order + "»")); m.append(" · "); }
+      m.append("Лютик "); m.append(el("b", null, say)); if (startT) m.append(" · идёт " + since(new Date().toISOString()));
     } catch (e) {}
   }
-
   $("#order").addEventListener("submit", async ev => {
-    ev.preventDefault();
-    const theme = $("#theme").value.trim(); if (!theme) { $("#theme").focus(); return; }
+    ev.preventDefault(); const theme = $("#theme").value.trim(); if (!theme) return $("#theme").focus();
     $("#go").disabled = true;
-    try {
-      const r = await fetch("/api/order", { method: "POST", headers: { "Content-Type": "application/json", "X-Studio": "1" }, body: JSON.stringify({ theme }) });
-      const d = await r.json();
-      if (!r.ok) { $("#frame").textContent = d.error || "Заказ не ушёл."; $("#go").disabled = false; return; }
-      order = d.theme; after = d.after; events = []; startT = null;
-      $("#frame").textContent = "Заказ ушёл: «" + d.theme + "». Дальше решает Лютик."; render(); snap();
+    try { const r = await fetch("/api/order", { method: "POST", headers: { "Content-Type": "application/json", "X-Studio": "1" }, body: JSON.stringify({ theme }) });
+      const d = await r.json(); if (!r.ok) { $("#frame").textContent = d.error || "Заказ не ушёл."; $("#go").disabled = false; return; }
+      order = d.theme; after = d.after; events = []; startT = null; $("#frame").textContent = "Заказ ушёл: «" + d.theme + "». Дальше решает Лютик."; render(); snap();
     } catch (e) { $("#frame").textContent = "Панель не ответила — проверь туннель."; $("#go").disabled = false; }
   });
-
   (async () => {
-    const which = location.hash === "#last" ? "last" : "order";
-    try { const d = await (await fetch("/api/studio/start?from=" + which)).json(); after = d.after; } catch (e) { after = 0; }
-    render(); snap(); poll();
-    setInterval(poll, 1500); setInterval(snap, 5000); setInterval(tick, 1000);
+    try { const d = await (await fetch("/api/studio/start?from=" + (location.hash === "#last" ? "last" : "order"))).json(); after = d.after; } catch (e) { after = 0; }
+    render(); snap(); poll(); setInterval(poll, 1500); setInterval(snap, 5000); setInterval(tick, 1000); setInterval(() => fetchNarr(steps()), 4000);
   })();
 })();
 </script>
