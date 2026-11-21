@@ -638,6 +638,10 @@ def release(path_arg, caption, cover_arg="", start=None, length=None, despite=""
         print(f"[сухой прогон] релиз «{title}»: {'обложка ' + rel(cover) if cover else 'обложка не нарисована'}, "
               f"сниппет {length:.0f} с с {start:.0f}-й секунды, подпись {len(caption)} знаков — не отправлено")
         return
+    if not setting("RELEASE_VIDEO", 1):       # без видео: 21.11 рендер 1080×1920 с Whisper упирался в 500 МБ службы,
+        link = send("channel", None, path_arg, caption=caption, cover=cover, lyrics=True)   # OOM 605 раз подряд
+        print(f"релиз «{title}» без видео-сниппета: трек с обложкой и подписью — {link}; текст песни повиснет в комментариях сам")
+        return
     s = secrets()
     token, channel = s.get("TELEGRAM_BOT_TOKEN"), s.get("TELEGRAM_CHANNEL_ID")
     if not token or not channel:
