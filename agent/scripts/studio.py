@@ -212,7 +212,9 @@ def check(path_arg):
     problem = song.budget_block(title, DESCRIBE_COST)
     if problem:
         fail(problem)
-    measured = measure(src)
+    # замеры (librosa + ffmpeg, ~420 МБ на пике) — подсказка для правки, не для вердикта; 20.11 23:27 они вместе с
+    # циклом упёрлись в 500 МБ службы и OOM убил сессию альбома. STUDIO_MEASURE=0 — проверка без замеров
+    measured = measure(src) if song.setting("STUDIO_MEASURE", 1) else ""
     try:
         d = describe(src)
     except mureka_api.MurekaError as err:
