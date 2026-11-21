@@ -123,14 +123,41 @@ def subscribers(events):
                 return {"n": int(m.group(1)), "t": e.get("t")}
     return None
 
+def event_lines():
+    """Строки журнала по одной, с номером: журнал не читается в память целиком. 21.11 он вырос до 12 МБ, и полный
+    разбор на каждый запрос (снимок раз в 5 с, лента раз в 1.5 с) упирался в 150 МБ службы — OOM 47 раз."""
+    try:
+        with EVENTS.open(encoding="utf-8", errors="replace") as f:
+            yield from enumerate(f)
+    except OSError:
+        return
+
+def parse(line):
+    try:
+        return json.loads(line)
+    except ValueError:
+        return None
+
+def scan_events(tail=3000):
+    """Один проход: последние tail событий разобранными, число сессий, правки ядра персонажа."""
+    from collections import deque
+    last, sessions, persona_edits = deque(maxlen=tail), 0, []
+    for _, line in event_lines():
+        if '"kind": "session"' in line:
+            sessions += 1
+        if "PERSONA.md" in line and '"kind": "tool"' in line:
+            e = parse(line)
+            if e and e.get("name") == "write_file" and str((e.get("args") or {}).get("path", "")).endswith("PERSONA.md"):
+                persona_edits.append(e["t"])
+        last.append(line)
+    return [e for e in map(parse, last) if e], sessions, persona_edits
+
 def snapshot():
-    events = jsonl(EVENTS)
+    events, sessions, persona_edits = scan_events()
     ents = []
     d = HOME / "memory" / "entities"
     for f in sorted(d.glob("*.md"), key=lambda x: -x.stat().st_mtime) if d.exists() else []:
         ents.append({"name": f.stem, "text": read(f), "mtime": int(f.stat().st_mtime)})
-    persona_edits = [e["t"] for e in events if e["kind"] == "tool" and e.get("name") == "write_file"
-                     and str((e.get("args") or {}).get("path", "")).endswith("PERSONA.md")]
     now = datetime.datetime.now()
     try:
         dials = list(vitals(HOME, now)) if vitals else []
@@ -147,7 +174,7 @@ def snapshot():
         "tickets": jsonl(HOME / "state" / "tickets.jsonl")[::-1],
         "operator_pending": (HOME / "state" / "operator.txt").exists(),
         "channel": channel(),
-        "sessions": sum(1 for e in events if e["kind"] == "session"),
+        "sessions": sessions,
         "vitals": dials,
         "subscribers": subscribers(events),
         "banned": banned(now.astimezone()),
@@ -155,36 +182,43 @@ def snapshot():
     }
 
 def events_after(after):
-    lines = read(EVENTS).splitlines()
-    start = max(0, len(lines) - FIRST_LOAD) if after < 0 else after
+    """События с номера after (или последние FIRST_LOAD при after < 0) — потоком, в памяти только отдаваемое."""
+    from collections import deque
+    keep = deque(maxlen=FIRST_LOAD) if after < 0 else []
+    n = 0
+    for i, line in event_lines():
+        n = i + 1
+        if after < 0 or i >= after:
+            keep.append((i, line))
     out = []
-    for i, line in enumerate(lines[start:], start):
-        try:
-            e = json.loads(line)
-        except ValueError:
-            continue
-        e["i"] = i
-        out.append(e)
-    return {"events": out, "next": len(lines)}
+    for i, line in keep:
+        e = parse(line)
+        if e is not None:
+            e["i"] = i
+            out.append(e)
+    return {"events": out, "next": n}
+
+def count_lines():
+    n = 0
+    for i, _ in event_lines():
+        n = i + 1
+    return n
 
 ORDER_MARK = "Заказ из зала"
 STUDIO_FILE = Path(__file__).with_name("studio.html")
 
 def studio_start(which):
     """С какой строки журнала показывать студию: последняя сессия по заказу из зала (order) или просто последняя (last)."""
-    lines = read(EVENTS).splitlines()
-    found = None
-    for i in range(len(lines) - 1, -1, -1):
-        if '"kind": "session"' not in lines[i]:
+    found, n = None, 0
+    for i, line in event_lines():
+        n = i + 1
+        if '"kind": "session"' not in line:
             continue
-        try:
-            e = json.loads(lines[i])
-        except ValueError:
-            continue
-        if which == "last" or str(e.get("operator") or "").startswith(ORDER_MARK):
-            found = i
-            break
-    return {"after": found if found is not None else len(lines), "found": found is not None}
+        if which == "last" or ORDER_MARK in line:
+            e = parse(line)
+            if e and (which == "last" or str(e.get("operator") or "").startswith(ORDER_MARK)):
+                found = i
+    return {"after": found if found is not None else n, "found": found is not None}
 
 def order_letter(theme):
     return (f"{ORDER_MARK} (показ курса, {datetime.datetime.now():%d.%m %H:%M}): песня на тему «{theme}».\n\n"
@@ -202,7 +236,7 @@ def place_order(theme):
     tmp = box.with_suffix(".studio.tmp")
     tmp.write_text(order_letter(theme), encoding="utf-8")
     tmp.rename(box)                                   # целиком или никак: run.py не прочтёт половину письма
-    return 200, {"ok": True, "theme": theme, "after": len(read(EVENTS).splitlines())}
+    return 200, {"ok": True, "theme": theme, "after": count_lines()}
 
 
 class Handler(BaseHTTPRequestHandler):
