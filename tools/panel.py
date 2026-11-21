@@ -204,7 +204,8 @@ def count_lines():
         n = i + 1
     return n
 
-ORDER_MARK = "Заказ из зала"
+ORDER_MARK = "Показ курса"
+MARKS = (ORDER_MARK, "Заказ из зала")      # прежние заказы с темой тоже узнаются
 STUDIO_FILE = Path(__file__).with_name("studio.html")
 
 # ── пересказ шагов для студии: его мысль и действие по-русски, одной фразой, для зала ──────────────────────────
@@ -288,29 +289,28 @@ def studio_start(which):
         n = i + 1
         if '"kind": "session"' not in line:
             continue
-        if which == "last" or ORDER_MARK in line:
+        if which == "last" or any(m in line for m in MARKS):
             e = parse(line)
-            if e and (which == "last" or str(e.get("operator") or "").startswith(ORDER_MARK)):
+            if e and (which == "last" or str(e.get("operator") or "").startswith(MARKS)):
                 found = i
     return {"after": found if found is not None else n, "found": found is not None}
 
-def order_letter(theme):
-    return (f"{ORDER_MARK} (показ курса, {datetime.datetime.now():%d.%m %H:%M}): песня на тему «{theme}».\n\n"
-            "Как — решай сам: что прочитать, о чём петь, каким звуком, сколько дублей и выпускать ли её. "
-            "Песня короткая: куплет и припев. Бюджет — $1.0 на эту песню, каждый дубль — через song_check. "
-            "Пока работаешь, за тобой смотрит зал.")
+LETTERS = {      # тему зал не даёт: что петь, решает он сам; зал влияет только через личку бота
+    "song": "{mark} ({when}): зал смотрит, пора новой песни. О чём, каким звуком, сколько дублей и выпускать ли её — "
+            "решай сам. Песня короткая: куплет и припев. Бюджет — $1.0, каждый дубль — через song_check.",
+    "wake": "{mark} ({when}): зал смотрит. Чем заняться — решай сам.",
+}
 
-def place_order(theme):
-    theme = " ".join(str(theme or "").split())[:200]
-    if not theme:
-        return 400, {"error": "Тема пустая — напиши, о чём песня."}
+def place_order(mode):
+    if mode not in LETTERS:
+        return 400, {"error": "Неизвестная кнопка."}
     box = HOME / "state" / "operator.txt"
     if box.exists():
         return 409, {"error": "Лютику уже лежит письмо — он его ещё не прочёл. Подожди минуту."}
     tmp = box.with_suffix(".studio.tmp")
-    tmp.write_text(order_letter(theme), encoding="utf-8")
+    tmp.write_text(LETTERS[mode].format(mark=ORDER_MARK, when=f"{datetime.datetime.now():%d.%m %H:%M}"), encoding="utf-8")
     tmp.rename(box)                                   # целиком или никак: run.py не прочтёт половину письма
-    return 200, {"ok": True, "theme": theme, "after": count_lines()}
+    return 200, {"ok": True, "mode": mode, "after": count_lines()}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -370,7 +370,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/narrate":
             code, body = 200, narrate(req.get("steps") or [])
         else:
-            code, body = place_order(req.get("theme"))
+            code, body = place_order(req.get("mode"))
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")

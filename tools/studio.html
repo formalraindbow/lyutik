@@ -23,11 +23,14 @@ header { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; j
 h1 { margin: 6px 0 0; font: 600 clamp(34px, 4.6vw, 52px)/1 var(--quote); letter-spacing: .01em }
 .meta { font-size: 15px; color: var(--muted); text-align: right }
 .meta b { color: var(--ink); font-weight: 600 }
-form { display: flex; flex-wrap: wrap; gap: 10px }
-form input { flex: 1 1 360px; min-width: 0; font: 500 19px/1.3 var(--body); padding: 13px 16px; border-radius: 12px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink) }
-form button { font: 600 17px/1 var(--body); padding: 13px 22px; border-radius: 12px; border: 0; background: var(--amber); color: #1b1408; cursor: pointer }
-form button:disabled { opacity: .5; cursor: default }
-form input:focus-visible, form button:focus-visible, summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px }
+.go { display: flex; flex-wrap: wrap; gap: 10px; align-items: center }
+.go button { font: 600 17px/1 var(--body); padding: 14px 22px; border-radius: 12px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); cursor: pointer }
+.go button.main { background: var(--amber); border-color: var(--amber); color: #1b1408 }
+.go button.ghost { font-size: 14px; padding: 10px 14px; color: var(--muted); margin-left: auto }
+.go button:disabled { opacity: .5; cursor: default }
+.go button:focus-visible, summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px }
+.frame b { color: var(--ink) }
+.toast { position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); right: max(14px, env(safe-area-inset-right, 0px)); z-index: 20; max-width: min(460px, 90vw); background: var(--amber); color: #1b1408; font: 600 16px/1.35 var(--body); padding: 12px 16px; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.45) }
 .frame { font-size: 14px; color: var(--faint); max-width: 90ch; margin: 0 }
 .now { background: linear-gradient(180deg, var(--surface2), var(--surface)); border: 1px solid var(--rule); border-radius: 18px; padding: 22px 26px 20px; display: grid; gap: 10px; min-height: 150px }
 .now .q { font: italic 500 clamp(26px, 3.1vw, 36px)/1.25 var(--quote); color: var(--ink); text-wrap: balance }
@@ -86,11 +89,12 @@ details.orig p { margin: 6px 0 0; font-size: 13px; color: var(--faint); overflow
   </header>
 
   <section style="display:grid;gap:8px">
-    <form id="order">
-      <input id="theme" maxlength="200" autocomplete="off" placeholder="О чём песня? Тему даёт зал">
-      <button id="go" type="submit">Заказать</button>
-    </form>
-    <p class="frame" id="frame">Лютик получает только тему: «как — решай сам: что прочитать, о чём петь, каким звуком, сколько дублей и выпускать ли её». Дальше всё решает он.</p>
+    <div class="go">
+      <button id="song" type="button" class="main">Пусть запишет песню</button>
+      <button id="wake" type="button">Просто разбудить</button>
+      <button id="bell" type="button" class="ghost">Включить уведомления</button>
+    </div>
+    <p class="frame" id="frame">Тему зал не даёт: о чём петь, каким звуком и выпускать ли — решает Лютик. Хотите повлиять — напишите ему в личку <b>@liutikkbot</b>; возьмёт ли — решит он.</p>
   </section>
 
   <section class="now" aria-live="polite">
@@ -102,6 +106,7 @@ details.orig p { margin: 6px 0 0; font-size: 13px; color: var(--faint); overflow
   <nav class="track" id="track" aria-label="Этапы песни"></nav>
 
   <section class="diary" id="diary"></section>
+  <div class="toast" id="toast" role="status" hidden></div>
 </div>
 
 <script>
@@ -115,7 +120,8 @@ details.orig p { margin: 6px 0 0; font-size: 13px; color: var(--faint); overflow
     song_edit: "переписал участок", song_remix: "сменил звук", draw: "нарисовал обложку", release: "выпустил песню",
     post_song: "выложил песню", post: "написал пост", remember: "записал в память", write_file: "записал в память",
     sleep: "уснул", ticket: "написал разработчику", lute: "сыграл на лютне", sing: "спел под лютню" };
-  let after = -1, events = [], order = null, startT = null;
+  let after = -1, events = [], order = null, startT = null, songTitle = null, mine = false, live = false, ctx = null;
+  const baseTitle = document.title;
   const narr = {}, inflight = new Set();
   const $ = s => document.querySelector(s);
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -245,7 +251,10 @@ details.orig p { margin: 6px 0 0; font-size: 13px; color: var(--faint); overflow
       if (st.kind === "wake") {
         const n = el("div", "step minor"); n.append(el("div", "t", since(st.t)), el("div", "dot"));
         const op = st.e.operator || ""; const th = op.startsWith("Заказ из зала") ? (op.match(/«([^»]+)»/) || [])[1] : null;
-        const d = el("div", "did"); d.append(el("span", "act", "проснулся"), el("span", "got", th ? "— заказ зала: «" + th + "»" : op ? "— письмо: " + first(op, 110) : "— " + first(st.e.wake, 80)));
+        const show = op.startsWith("Показ курса"); if (show || th) mine = true;
+        const what = th ? "— заказ зала: «" + th + "»" : show ? (/новой песни/.test(op) ? "— зал смотрит: пора новой песни, о чём — решает сам" : "— зал смотрит: чем заняться, решает сам")
+                   : op ? "— письмо: " + first(op, 110) : "— " + first(st.e.wake, 80);
+        const d = el("div", "did"); d.append(el("span", "act", "проснулся"), el("span", "got", what));
         const b = el("div", "b"); b.append(d); n.append(b); nodes.push(n); if (th) order = th; return;
       }
       if (st.kind === "sleep") {
@@ -274,11 +283,12 @@ details.orig p { margin: 6px 0 0; font-size: 13px; color: var(--faint); overflow
       nodes.push(node);
     });
     diary.replaceChildren(...nodes);
+    list.forEach(st => st.kind === "step" && st.tools.forEach(x => { if (x.name === "song" && x.args.title) songTitle = x.args.title; }));
     // сейчас думает: последняя мысль, пересказанная по-русски; пока пересказа нет — его последняя реплика
     const withWhy = list.filter(st => st.kind === "step" && ((narr[nkey(st)] || narr[st.key] || {}).why || st.said.find(cyr)));
     const last = withWhy[withWhy.length - 1], q = $("#nowq");
     if (last) { const n = narr[nkey(last)] || narr[last.key] || {}; const w = n.why || last.said.find(cyr); q.textContent = "«" + w.replace(/^«|»$/g, "") + "»"; q.className = "q"; $("#nowt").textContent = since(last.t); }
-    else { q.textContent = list.length ? "думает…" : "Ждёт заказа."; q.className = "q idle"; }
+    else { q.textContent = list.length ? "думает…" : "Спит. Нажмите «Пусть запишет песню»."; q.className = "q idle"; }
     const s = stageOf(list), tr = $("#track"); tr.replaceChildren();
     STAGES.forEach((x, i) => { if (i) tr.append(el("span", "sep", "—")); tr.append(el("span", "stage" + (x === s.now ? " cur" : s.r[x] ? " done" : ""), x)); });
     fetchNarr(list);
@@ -287,26 +297,64 @@ details.orig p { margin: 6px 0 0; font-size: 13px; color: var(--faint); overflow
   function tick() {
     document.querySelectorAll(".timer[data-since]").forEach(t => { const s = Math.max(0, Math.round((Date.now() - new Date(t.dataset.since)) / 1000)); t.textContent = "Mureka поёт " + Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); });
   }
+  function chime() {
+    try { ctx = ctx || new (window.AudioContext || window.webkitAudioContext)(); const t = ctx.currentTime;
+      [660, 990].forEach((f, i) => { const o = ctx.createOscillator(), g = ctx.createGain(), s0 = t + i * 0.16;
+        o.frequency.value = f; g.gain.setValueAtTime(0.0001, s0); g.gain.exponentialRampToValueAtTime(0.22, s0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, s0 + 0.38);
+        o.connect(g).connect(ctx.destination); o.start(s0); o.stop(s0 + 0.42); }); } catch (e) {}
+  }
+  function notify(head, body) {          // важное — звуком, системным уведомлением поверх других окон и плашкой на странице
+    chime(); document.title = "● " + head;
+    try { if ("Notification" in window && Notification.permission === "granted") new Notification(head, { body: body || "", tag: "lyutik" }); } catch (e) {}
+    const b = $("#toast"); b.textContent = head + (body ? " — " + body : ""); b.hidden = false; clearTimeout(b._t); b._t = setTimeout(() => { b.hidden = true; }, 12000);
+  }
+  window.addEventListener("focus", () => { document.title = baseTitle; });
+  function milestones(evs) {
+    evs.forEach(e => { const r = String(e.result || ""), a = e.args || {};
+      if (e.kind === "session" && /^(Показ курса|Заказ из зала)/.test(e.operator || "")) notify("Лютик проснулся", "");
+      else if (e.kind === "tool_start" && e.name === "song") notify("Текст готов", "«" + (a.title || "") + "» — Mureka поёт");
+      else if (e.kind === "tool" && e.name === "song" && /\.mp3/.test(r)) notify("Mureka спела", "«" + (a.title || "") + "»");
+      else if (e.kind === "tool" && e.name === "song_check") notify(/— ГОДНО/.test(r) ? "Судья: годно" : "Судья: править", first((r.match(/Нельзя, а звучит:[^.]*/) || [""])[0], 120));
+      else if (e.kind === "tool" && ["release", "post_song"].includes(e.name) && /t\.me/.test(r) && !/^ошибка/.test(r)) notify("Выпустил песню", a.caption || "");
+      else if (e.kind === "tool" && e.name === "post" && /опубликовано/.test(r)) notify("Написал пост", "");
+      else if (e.kind === "dm") notify("Ему написали в личку", first((e.name ? e.name + ": " : "") + (e.text || ""), 100));
+    });
+  }
   async function poll() {
     if (after < 0) return;
     try { const d = await (await fetch("/api/events?after=" + after)).json(); after = d.next;
+      if (live) milestones(d.events);
+      live = true;
       const fresh = d.events.filter(e => ["session", "session_end", "thought", "said", "tool_start", "tool"].includes(e.kind));
       if (fresh.length) { events = events.concat(fresh); render(); } } catch (e) {}
   }
   async function snap() {
     try { const d = await (await fetch("/api/snapshot")).json(), s = d.status || {}, m = $("#meta"); m.replaceChildren();
       const say = { sleeping: "спит" + (s.until ? " до " + String(s.until).slice(11, 16) : ""), thinking: "думает", acting: "работает", stopped: "остановлен", starting: "просыпается", error: "сбой" }[s.state] || s.state;
-      if (order) { m.append("заказ: "); m.append(el("b", null, "«" + order + "»")); m.append(" · "); }
+      if (songTitle) { m.append("песня: "); m.append(el("b", null, "«" + songTitle + "»")); m.append(" · "); }
+      else if (order) { m.append("заказ: "); m.append(el("b", null, "«" + order + "»")); m.append(" · "); }
+      else if (mine) { m.append("тема: "); m.append(el("b", null, "выбирает сам")); m.append(" · "); }
       m.append("Лютик "); m.append(el("b", null, say)); if (startT && Date.now() - new Date(startT) < 90 * 60000) m.append(" · идёт " + since(new Date().toISOString()));
     } catch (e) {}
   }
-  $("#order").addEventListener("submit", async ev => {
-    ev.preventDefault(); const theme = $("#theme").value.trim(); if (!theme) return $("#theme").focus();
-    $("#go").disabled = true;
-    try { const r = await fetch("/api/order", { method: "POST", headers: { "Content-Type": "application/json", "X-Studio": "1" }, body: JSON.stringify({ theme }) });
-      const d = await r.json(); if (!r.ok) { $("#frame").textContent = d.error || "Заказ не ушёл."; $("#go").disabled = false; return; }
-      order = d.theme; after = d.after; events = []; startT = null; $("#frame").textContent = "Заказ ушёл: «" + d.theme + "». Дальше решает Лютик."; render(); snap();
-    } catch (e) { $("#frame").textContent = "Панель не ответила — проверь туннель."; $("#go").disabled = false; }
+  async function send(mode) {
+    try { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission(); } catch (e) {}
+    chime();                                       // клик разрешает звук на странице
+    ["#song", "#wake"].forEach(x => { $(x).disabled = true; });
+    try { const r = await fetch("/api/order", { method: "POST", headers: { "Content-Type": "application/json", "X-Studio": "1" }, body: JSON.stringify({ mode }) });
+      const d = await r.json();
+      if (!r.ok) { $("#frame").textContent = d.error || "Письмо не ушло."; ["#song", "#wake"].forEach(x => { $(x).disabled = false; }); return; }
+      after = d.after; events = []; startT = null; order = null; songTitle = null; mine = true; built.clear();
+      $("#frame").textContent = mode === "song" ? "Письмо ушло: «зал смотрит, пора новой песни — о чём, решай сам». Проснётся в течение полуминуты." : "Разбудили: «зал смотрит, чем заняться — решай сам».";
+      render(); snap();
+    } catch (e) { $("#frame").textContent = "Панель не ответила — проверь туннель."; ["#song", "#wake"].forEach(x => { $(x).disabled = false; }); }
+  }
+  $("#song").addEventListener("click", () => send("song"));
+  $("#wake").addEventListener("click", () => send("wake"));
+  $("#bell").addEventListener("click", async () => {
+    chime();
+    try { const p = await Notification.requestPermission(); $("#bell").textContent = p === "granted" ? "Уведомления включены" : "Браузер запретил уведомления — звук и плашка останутся"; }
+    catch (e) { $("#bell").textContent = "Уведомлений нет — звук и плашка останутся"; }
   });
   (async () => {
     try { const d = await (await fetch("/api/studio/start?from=" + (location.hash === "#last" ? "last" : "order"))).json(); after = d.after; } catch (e) { after = 0; }
