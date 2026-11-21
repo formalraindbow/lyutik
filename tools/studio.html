@@ -36,7 +36,7 @@ form input:focus-visible, form button:focus-visible, summary:focus-visible { out
 .track { display: flex; flex-wrap: wrap; gap: 6px; align-items: center }
 .stage { font: 500 13px/1 var(--body); color: var(--faint); padding: 8px 12px; border-radius: 999px; border: 1px solid var(--rule) }
 .stage.done { color: var(--ink); border-color: #3a434e }
-.stage.now { color: #1b1408; background: var(--amber); border-color: var(--amber) }
+.stage.cur { color: #1b1408; background: var(--amber); border-color: var(--amber) }
 .sep { color: var(--rule) }
 .diary { position: relative; display: grid; gap: 4px }
 .diary::before { content: ""; position: absolute; left: 66px; top: 6px; bottom: 6px; width: 1px; background: var(--rule) }
@@ -240,8 +240,8 @@ details.orig p { margin: 6px 0 0; font-size: 13px; color: var(--faint); overflow
     list.forEach(st => {
       if (st.kind === "wake") {
         const n = el("div", "step minor"); n.append(el("div", "t", since(st.t)), el("div", "dot"));
-        const op = st.e.operator || ""; const th = (op.match(/«([^»]+)»/) || [])[1];
-        const d = el("div", "did"); d.append(el("span", "act", "проснулся"), el("span", "got", th ? "— заказ зала: «" + th + "»" : "— " + first(op || st.e.wake, 120)));
+        const op = st.e.operator || ""; const th = op.startsWith("Заказ из зала") ? (op.match(/«([^»]+)»/) || [])[1] : null;
+        const d = el("div", "did"); d.append(el("span", "act", "проснулся"), el("span", "got", th ? "— заказ зала: «" + th + "»" : op ? "— письмо: " + first(op, 110) : "— " + first(st.e.wake, 80)));
         const b = el("div", "b"); b.append(d); n.append(b); diary.append(n); if (th) order = th; return;
       }
       if (st.kind === "sleep") {
@@ -264,7 +264,7 @@ details.orig p { margin: 6px 0 0; font-size: 13px; color: var(--faint); overflow
     if (last) { const n = narr[nkey(last)] || narr[last.key] || {}; const w = n.why || last.said.find(cyr); q.textContent = "«" + w.replace(/^«|»$/g, "") + "»"; q.className = "q"; $("#nowt").textContent = since(last.t); }
     else { q.textContent = list.length ? "думает…" : "Ждёт заказа."; q.className = "q idle"; }
     const s = stageOf(list), tr = $("#track"); tr.replaceChildren();
-    STAGES.forEach((x, i) => { if (i) tr.append(el("span", "sep", "—")); tr.append(el("span", "stage" + (x === s.now ? " now" : s.r[x] ? " done" : ""), x)); });
+    STAGES.forEach((x, i) => { if (i) tr.append(el("span", "sep", "—")); tr.append(el("span", "stage" + (x === s.now ? " cur" : s.r[x] ? " done" : ""), x)); });
     fetchNarr(list);
   }
 
@@ -281,7 +281,7 @@ details.orig p { margin: 6px 0 0; font-size: 13px; color: var(--faint); overflow
     try { const d = await (await fetch("/api/snapshot")).json(), s = d.status || {}, m = $("#meta"); m.replaceChildren();
       const say = { sleeping: "спит" + (s.until ? " до " + String(s.until).slice(11, 16) : ""), thinking: "думает", acting: "работает", stopped: "остановлен", starting: "просыпается", error: "сбой" }[s.state] || s.state;
       if (order) { m.append("заказ: "); m.append(el("b", null, "«" + order + "»")); m.append(" · "); }
-      m.append("Лютик "); m.append(el("b", null, say)); if (startT) m.append(" · идёт " + since(new Date().toISOString()));
+      m.append("Лютик "); m.append(el("b", null, say)); if (startT && Date.now() - new Date(startT) < 90 * 60000) m.append(" · идёт " + since(new Date().toISOString()));
     } catch (e) {}
   }
   $("#order").addEventListener("submit", async ev => {
