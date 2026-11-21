@@ -541,7 +541,8 @@ def release_block():
     return (f"прошлый релиз — {last:%d.%m %H:%M}, следующий не раньше {ready:%d.%m %H:%M}: между релизами "
             f"пишутся слова, пробуются дубли, выбирается лучший")
 
-def send(where, target, path_arg, caption="", cover_arg="", cover=None, lyrics=True, words=False):
+def send(where, target, path_arg, caption="", cover_arg="", cover=None, lyrics=True, words=False, checked=False):
+    """checked=True — запись уже прошла ворота релиза (release, в том числе «вопреки» с причиной): не проверять снова."""
     src = local(path_arg)
     e = entry_for(src)
     title = e.get("title") or src.stem
@@ -578,9 +579,9 @@ def send(where, target, path_arg, caption="", cover_arg="", cover=None, lyrics=T
             text_later = True                       # длиннее подписи — целиком комментарием под треком
     label = f"🎵 «{title}»" + (" — кусок" if is_snippet else "") + (f"\n{caption.strip()}" if caption.strip() else "")
     if where == "channel":
-        if lyrics and not is_snippet and release_block():      # трек из release (lyrics=False) уже прошёл проверку
+        if lyrics and not checked and not is_snippet and release_block():   # трек из release уже прошёл проверку
             fail(release_block())
-        if lyrics and check_block(src, title):                 # кусок — по проверке своей песни
+        if lyrics and not checked and check_block(src, title):             # кусок — по проверке своей песни
             fail(check_block(src, title))
         msg = tg_captioned(token, "sendAudio", lambda rich: with_caption({**data, "chat_id": channel}, caption, rich), files)
         link = tg_link(msg)
@@ -639,7 +640,7 @@ def release(path_arg, caption, cover_arg="", start=None, length=None, despite=""
               f"сниппет {length:.0f} с с {start:.0f}-й секунды, подпись {len(caption)} знаков — не отправлено")
         return
     if not setting("RELEASE_VIDEO", 1):       # без видео: 21.11 рендер 1080×1920 с Whisper упирался в 500 МБ службы,
-        link = send("channel", None, path_arg, caption=caption, cover=cover, lyrics=True)   # OOM 605 раз подряд
+        link = send("channel", None, path_arg, caption=caption, cover=cover, lyrics=True, checked=True)   # OOM 605 раз
         print(f"релиз «{title}» без видео-сниппета: трек с обложкой и подписью — {link}; текст песни повиснет в комментариях сам")
         return
     s = secrets()
