@@ -258,7 +258,7 @@ def narrate_one(step):
     return rec
 
 def narrate(steps):
-    """Пересказы шагов: готовые — из кеша, новые — Claude (не больше 6 за раз, параллельно)."""
+    """Пересказы шагов: готовые — из кеша, новые — Claude, не больше двух за запрос и по одному."""
     from concurrent.futures import ThreadPoolExecutor
     out, todo = {}, []
     for st in steps[:40]:
@@ -269,8 +269,8 @@ def narrate(steps):
             out[k] = NARR[k]
         else:
             todo.append(st)
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        for st, rec in zip(todo[:6], pool.map(lambda x: _safe_narrate(x), todo[:6])):
+    with ThreadPoolExecutor(max_workers=1) as pool:      # по одному: 21.11 залп по 4 параллельно совпал до секунды
+        for st, rec in zip(todo[:2], pool.map(lambda x: _safe_narrate(x), todo[:2])):   # с блокировкой Sonnet на час
             if rec:
                 out[st["key"]] = rec
     return out

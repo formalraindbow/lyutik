@@ -157,7 +157,7 @@ details.orig p { margin: 6px 0 0; font-size: 13px; color: var(--faint); overflow
     actions: st.tools.map(x => x.name + " (" + argsum(x) + ")" + (x.result != null ? " ⇒ " + first(x.result, 360) : " ⇒ ещё идёт")) });
 
   async function fetchNarr(list) {
-    const want = list.filter(st => st.kind === "step" && !narr[nkey(st)] && !inflight.has(nkey(st)) && (st.thought.length || st.said.length || st.tools.length)).slice(-6);
+    const want = list.filter(st => st.kind === "step" && !narr[nkey(st)] && !inflight.has(nkey(st)) && (st.thought.length || st.said.length || st.tools.length)).slice(-2);
     if (!want.length) return;
     want.forEach(st => inflight.add(nkey(st)));
     try {
@@ -358,7 +358,7 @@ details.orig p { margin: 6px 0 0; font-size: 13px; color: var(--faint); overflow
   });
   (async () => {
     try { const d = await (await fetch("/api/studio/start?from=" + (location.hash === "#last" ? "last" : "order"))).json(); after = d.after; } catch (e) { after = 0; }
-    render(); snap(); poll(); setInterval(poll, 1500); setInterval(snap, 5000); setInterval(tick, 1000); setInterval(() => fetchNarr(steps()), 4000);
+    render(); snap(); poll(); setInterval(poll, 1500); setInterval(snap, 5000); setInterval(tick, 1000); setInterval(() => fetchNarr(steps()), 5000);
   })();
 })();
 </script>
