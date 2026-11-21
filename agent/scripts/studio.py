@@ -353,6 +353,9 @@ def edit(path_arg, start, end, text):
     start, end, text = float(start), float(end), (text or "").strip()
     if not 10 <= end - start <= 30:
         fail("окно правки — от 10 до 30 секунд")
+    total = song.seconds_of(src)                       # 21.11: окна за концом записи fal отклонял 422 без объяснений
+    if total and end > total:
+        fail(f"окно {start:.0f}–{end:.0f} с выходит за конец записи ({total:.0f} с) — сдвинь его, последнее окно — до {total:.0f} с")
     if not text:
         fail("нужен текст участка — что спеть на этом месте")
     if DRY:
